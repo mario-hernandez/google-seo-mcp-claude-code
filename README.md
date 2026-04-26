@@ -43,6 +43,18 @@ Then ask Claude: *"List all my GSC sites and GA4 properties, then run the opport
 
 Works with **Claude Code**, **Claude Desktop**, **Cursor**, **Windsurf**, and any other MCP-compatible client.
 
+## Questions you can actually ask
+
+Real prompts that fire real tool sequences (full playbook list in [`AGENTS.md`](AGENTS.md)):
+
+| You ask | The agent runs |
+|---------|----------------|
+| *"What's our SEO ROI this month?"* | `cross_seo_to_revenue_attribution` (90-day window) → returns top queries with attributed revenue |
+| *"Why did organic traffic drop?"* | `cross_traffic_health_check` (rule out tracking) → `gsc_traffic_drops` (classify as ranking_loss / ctr_collapse / demand_decline) → `resource://algorithm-updates` for the drop date |
+| *"Where should I invest SEO budget this quarter?"* | `cross_opportunity_matrix` → 4 quadrants (`high_impact` / `worth_optimizing` / `good_but_capped` / `low_priority`) auto-calibrated to your traffic |
+| *"Are old blog posts decaying?"* | `gsc_content_decay` AND `ga4_content_decay` — pages flagged in BOTH = refresh priority |
+| *"Compare my 12 store locations by organic traffic"* | `cross_multi_property_comparison` (parallel fan-out, up to 50 properties) |
+
 ## What you actually get
 
 **33 tools + 1 reference resource** across three categories — and six of them are impossible without unified auth.
@@ -101,7 +113,7 @@ Ask Claude: *"Is the tracking healthy on example.com?"*
 
 Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal because GSC counts every search-result-click while GA4 counts unique sessions (some users navigate away before analytics fires). Note how `_meta.period` cites both periods separately because GSC has a 3-day reporting lag while GA4 has only 1 day — the LLM can quote the exact dates without making them up.
 
-## All 32 tools
+## All 33 tools
 
 <details open>
 <summary><b>🔄 Cross-platform (5 — the unique selling proposition)</b></summary>
@@ -187,6 +199,20 @@ The OSS landscape has split GSC and GA4 into separate MCPs. This one unifies the
 | **This MCP** | **The unified Python suite: GSC + GA4 + 5 unique cross-platform tools (journey, opportunity matrix, health check, attribution, full diagnosis), with anti-hallucination provenance, leave-one-out Z-score, real funnels, and read-only-by-default safety.** Pick if your agent reports to clients and you can't afford a hallucinated number — or a missed cross-source insight. |
 
 This MCP started as a security-audited synthesis of seven open-source projects — credits at the bottom.
+
+## FAQ
+
+**Why use this over the official Google MCP?** The official MCP is a transport layer — wrappers around `runReport` and `searchanalytics.query`. Useful if you're building your own logic. This MCP adds 25+ tools with diagnostic logic baked in (classifications, scoring, anti-hallucination provenance) plus the 6 cross-platform tools that no single-source MCP can provide.
+
+**My site has very little traffic. Will this work?** Yes, but lower the thresholds. For sites under 500 clicks/mo, set `min_impressions=25-50` on `gsc_quick_wins` and `min_clicks_prior=5-10` on `gsc_traffic_drops`. Below ~100 clicks/mo, the issue is usually content/indexation rather than optimization — pivot to `gsc_inspect_url` and `gsc_list_sitemaps`. Don't fabricate recommendations from empty data; the agent should explicitly say *"insufficient sample for trend detection"* when thresholds aren't met. See [`AGENTS.md`](AGENTS.md) §9 for full edge-case handling.
+
+**Does this measure AI Overview impact?** Not directly — it's GSC + GA4 only, no SERP scraping. But the inference is reliable: pages ranking 1-3 with CTR collapse vs historical baseline are high-confidence AIO hits, especially when correlated with rollout dates from `resource://algorithm-updates`. See [`AGENTS.md`](AGENTS.md) §7 for the full inference protocol.
+
+**My GA4 has no ecommerce — will revenue tools still work?** They run, but `attributed_revenue` will be 0 across the board. **Don't conclude SEO has no ROI** — the agent should flag this as a tracking-config gap and suggest `ga4_search_schema(keyword='revenue')` to confirm what fields are available.
+
+**What about ad-blocker traffic?** Common in DACH/tech audiences. `cross_traffic_health_check` will flag `tracking_gap` when GA4 systematically under-reports vs GSC. Apply +15-30% upward correction on GA4 organic and disclose to the user.
+
+**Does it work with `sc-domain:` properties?** Yes — but the `site_url` string must match exactly what `gsc_list_sites` returns. Don't manually compose `https://example.com/` if the registered property is `sc-domain:example.com` — cross-platform path normalization handles both internally, but the join key requires the canonical form.
 
 ## Authentication
 
