@@ -295,6 +295,20 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - **Multi-property by parameter, not env.** Pass any `property_id` to any tool — no need to restart with a different property.
 - **Statistical rigor.** Leave-one-out Z baselines, monotonic-window decay detection, real funnels via sequential filters.
 
+## For agents — operator's guide
+
+If you're using this MCP through Claude Code / Cursor / Windsurf and want to get the most out of it, drop **[`AGENTS.md`](AGENTS.md)** into your agent's context. It's a synthesis of three expert perspectives (technical SEO, local SEO + SERP intent, marketing/growth analytics) into a single operating manual:
+
+- 25+ playbooks mapping common user questions to exact tool sequences
+- 3 decision trees (drop diagnosis, ROI/prioritization, local-specific)
+- 12 anti-patterns to avoid hallucinations and context blowup
+- Argument cookbook tuned by site profile (small/medium/enterprise/local)
+- Inference workarounds for what the MCP doesn't measure directly (AI Overview impact, brand vs non-brand, featured snippets)
+- 3 ready-to-paste reporting templates (weekly digest, monthly CMO report, agency multi-client dashboard)
+- Edge cases for small sites, multi-language, ad-blocker-heavy traffic, GA4 misconfig, holidays
+
+The file is designed to be pasted directly into the system prompt or attached as a context document.
+
 ## Testing
 
 ```bash
