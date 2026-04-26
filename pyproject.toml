@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "google-seo-mcp"
+version = "0.1.0"
+description = "The complete Google SEO MCP for Claude Code & Cursor — Search Console + Analytics 4 + cross-platform intelligence (GSC↔GA4 journey, opportunity matrix, revenue attribution, traffic health check). Diagnostic SEO logic, anti-hallucination provenance, read-only by default."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Mario Hernández"}]
+keywords = [
+    "mcp", "mcp-server", "model-context-protocol",
+    "claude", "claude-code", "anthropic", "cursor",
+    "google-search-console", "search-console", "gsc",
+    "google-analytics", "ga4", "google-analytics-4",
+    "seo", "seo-tools", "seo-automation", "marketing-analytics",
+    "anomaly-detection", "attribution",
+    "fastmcp", "python", "oauth",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "mcp>=1.2.0",
+    "google-api-python-client>=2.140.0",
+    "google-analytics-data>=0.18.0",
+    "google-analytics-admin>=0.22.0",
+    "google-auth>=2.30.0",
+    "google-auth-oauthlib>=1.2.0",
+    "platformdirs>=4.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
+    "ruff>=0.6.0",
+]
+
+[project.scripts]
+google-seo-mcp = "google_seo_mcp.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/mario-hernandez/google-seo-mcp-claude-code"
+Repository = "https://github.com/mario-hernandez/google-seo-mcp-claude-code"
+Issues = "https://github.com/mario-hernandez/google-seo-mcp-claude-code/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+.pytest_cache/
+.ruff_cache/
+
+# Credentials — never commit
+*.json
+credentials/
+token.json
+.token.json
+
+# Generated reports
+gsc-reports/
