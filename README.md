@@ -21,6 +21,10 @@
 
 > Stop running two MCPs. Stop pasting reports into ChatGPT. Connect both Google Search Console and Google Analytics 4 to Claude as native tools — with the cross-platform diagnostics that actually matter for SEO: which pages would convert if they ranked higher, which queries pay, where tracking is broken, and what the full journey looks like from organic click to revenue.
 
+<p align="center">
+  <img src="docs/why-unified.png" alt="Two isolated MCP servers vs one unified MCP — unified unlocks cross-platform tools (journey, opportunity matrix, traffic health check)" width="100%">
+</p>
+
 ## 30-second quickstart
 
 ```bash
@@ -41,17 +45,21 @@ Works with **Claude Code**, **Claude Desktop**, **Cursor**, **Windsurf**, and an
 
 ## What you actually get
 
-**32 tools** across three categories — and five of them are impossible without unified auth.
+**33 tools + 1 reference resource** across three categories — and six of them are impossible without unified auth.
 
 - 🔄 **Cross-platform tools that nobody else has** — the whole reason this exists. `gsc_to_ga4_journey` traces an organic click to its conversion. `opportunity_matrix` scores pages by *both* "could rank higher" AND "would convert if it did". `traffic_health_check` detects when GSC and GA4 disagree (broken tracking). `seo_to_revenue_attribution` tells you which queries actually pay.
 - 🩺 **Diagnoses, not data dumps** — `gsc_traffic_drops` classifies pages as ranking_loss / CTR_collapse / demand_decline. `ga4_traffic_drops_by_channel` classifies channels as volume_loss / engagement_decay / conversion_decay / bounce_surge. Multi-axis taxonomy improved over the existing OSS competitors.
-- 🔍 **Anti-hallucination guardrails** — every response is wrapped with `_meta` provenance (source, site_url, property, period, fetched_at). Your agent literally cannot make up the numbers when reporting to clients.
+- 🔍 **Anti-hallucination guardrails** — every response is wrapped with `_meta` provenance (source, site_url, property, period, fetched_at). Your agent literally cannot make up the numbers when reporting to clients. <img src="docs/spot-provenance.png" alt="Provenance shield — verifiable source, period, and fetched_at on every response" width="60" align="right">
 - 📐 **Rigorous statistics** — `ga4_anomalies` uses leave-one-out rolling Z-score (vs the contaminated-baseline approach in some other MCPs). `gsc_content_decay` requires 3 monotonic 30-day windows before flagging. Real funnels via sequential filters. Pearson correlation in pagespeed analyses.
 - 🛡️ **Read-only by default** — destructive operations (sitemap submission, etc.) require an explicit `GSC_ALLOW_DESTRUCTIVE=true` flag.
 
-## The five cross-platform killers
+## The six cross-platform killers
 
 These tools require both GSC and GA4 auth in the same process — which is exactly why they only exist here.
+
+<p align="center">
+  <img src="docs/journey-flow.png" alt="The complete journey: search → click → engagement → funnel → revenue, all instrumented end-to-end" width="100%">
+</p>
 
 | Tool | What it does | Why it matters |
 |------|--------------|----------------|
@@ -60,6 +68,13 @@ These tools require both GSC and GA4 auth in the same process — which is exact
 | `cross_traffic_health_check` | Compares GSC organic clicks vs GA4 organic sessions. Diagnoses `tracking_gap` / `filter_issue` / `healthy` based on the ratio. | Detects broken tracking, consent banner problems, bot traffic, channel mis-classification — invisible to either MCP alone. |
 | `cross_seo_to_revenue_attribution` | For each top organic query, attributes GA4 revenue proportionally by GSC click-share on the landing page. | Approximate but powerful: "which queries actually pay" — a question pure-GSC cannot answer and pure-GA4 cannot connect to keywords. |
 | `cross_landing_page_full_diagnosis` | One call → GSC ranking signals + cannibalization check + GA4 behavior + composite health score (0-100, red/amber/green) + specific issue flags. | End-to-end triage of one page. The single tool you'd use during a client review. |
+| `cross_multi_property_comparison` | Fans out to N GA4 properties (up to 50) in parallel, comparing a single metric. Returns sorted totals with optional dimension breakdown. | For agencies / multi-site owners: one call, all properties, one shared scope of auth. |
+
+<p align="center">
+  <img src="docs/opportunity-matrix.png" alt="The opportunity matrix — pages classified into four quadrants by GSC ranking opportunity vs GA4 conversion potential" width="80%">
+</p>
+
+The `cross_opportunity_matrix` quadrant model: pages in the **green high_impact** corner are where SEO effort pays off twice — they're close enough to top positions that a small ranking push will move them, AND once there they convert. The amber **worth_optimizing** zone needs both a ranking push AND on-page work. The cyan **good_but_capped** is already converting; leave them alone. The slate **low_priority** is where most pages live; ignore them.
 
 ## Real example — `cross_traffic_health_check`
 
@@ -151,6 +166,12 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 | `reauthenticate` | Reset in-process auth clients for both APIs |
 
 </details>
+
+### MCP Resource
+
+The server exposes one read-only resource — accessible to the LLM without issuing a tool call:
+
+- **`google-seo://algorithm-updates`** — reference list of confirmed Google Search algorithm updates from 2023 to today (core updates, spam updates, helpful content, AI Overviews, etc.) with start/end dates and notes. Use this to correlate `gsc_traffic_drops` or `ga4_anomalies` findings with industry-wide events. A drop on a core-update rollout date is much more likely Google-driven than site-specific.
 
 ## Compared to other Google MCP servers
 
@@ -273,6 +294,18 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - **Anti-context-blowup.** GA4 has `estimate_query_size` and `search_ga4_schema` so the LLM can size queries cheaply before fetching.
 - **Multi-property by parameter, not env.** Pass any `property_id` to any tool — no need to restart with a different property.
 - **Statistical rigor.** Leave-one-out Z baselines, monotonic-window decay detection, real funnels via sequential filters.
+
+## Testing
+
+```bash
+# Unit tests with mocks (no network)
+.venv/bin/pytest tests/ -v
+
+# End-to-end smoke test against your real Google APIs
+.venv/bin/python scripts/smoke_test.py
+```
+
+The smoke test probes all six layers of the MCP (auth, admin discovery, reporting, intelligence, cross-platform, resource) and surfaces real bugs the way they'll appear in production. It's the first thing to run after any code change.
 
 ## Predecessors
 

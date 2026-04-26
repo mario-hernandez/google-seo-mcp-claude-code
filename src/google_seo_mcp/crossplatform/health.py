@@ -54,9 +54,8 @@ def traffic_health_check(
         limit=1,
         aggregations=["TOTAL"],
     )
-    ga_sessions = (
-        float(ga_rows["totals"][0]["sessions"]) if ga_rows.get("totals") else 0
-    )
+    totals = ga_rows.get("totals") or []
+    ga_sessions = float(totals[0].get("sessions", 0)) if totals else 0
 
     if gsc_clicks == 0 and ga_sessions == 0:
         diagnosis = "no_organic_traffic"

@@ -19,6 +19,7 @@ from .crossplatform import diagnosis as cp_diag
 from .crossplatform import health as cp_health
 from .crossplatform import journey as cp_journey
 from .crossplatform import matrix as cp_matrix
+from .crossplatform import multi_property as cp_multi
 from .ga4.tools import admin as ga4_admin
 from .ga4.tools import intelligence as ga4_intel
 from .ga4.tools import reporting as ga4_reporting
@@ -27,6 +28,7 @@ from .gsc.tools import intelligence as gsc_intel
 from .gsc.tools import sitemaps as gsc_sitemaps
 from .gsc.tools import sites as gsc_sites
 from .guardrails import GUARDRAIL_SUFFIX
+from .resources.google_algorithm_updates import algorithm_updates_text
 
 logging.basicConfig(
     level=os.getenv("GOOGLE_SEO_LOG_LEVEL", "INFO"),
@@ -93,6 +95,19 @@ _register(cp_health.traffic_health_check, name="cross_traffic_health_check")
 _register(cp_matrix.opportunity_matrix, name="cross_opportunity_matrix")
 _register(cp_attr.seo_to_revenue_attribution, name="cross_seo_to_revenue_attribution")
 _register(cp_diag.landing_page_full_diagnosis, name="cross_landing_page_full_diagnosis")
+_register(cp_multi.multi_property_comparison, name="cross_multi_property_comparison")
+
+
+# ─── MCP Resource: Google algorithm updates reference ────────
+@mcp.resource("google-seo://algorithm-updates")
+def google_algorithm_updates_resource() -> str:
+    """Reference list of confirmed Google Search algorithm updates (2023–2026).
+
+    Use this resource when investigating traffic drops to correlate with industry-wide
+    events. A drop on a core-update rollout day is much more likely Google-driven
+    than site-specific.
+    """
+    return algorithm_updates_text()
 
 
 @mcp.tool()
@@ -163,8 +178,10 @@ def get_capabilities() -> dict:
                 "cross_opportunity_matrix",
                 "cross_seo_to_revenue_attribution",
                 "cross_landing_page_full_diagnosis",
+                "cross_multi_property_comparison",
             ],
             "meta": ["get_capabilities", "reauthenticate"],
+            "resources": ["google-seo://algorithm-updates"],
         },
         "tip": (
             "Workflow: (1) `gsc_list_sites` + `ga4_list_properties` to enumerate. "
