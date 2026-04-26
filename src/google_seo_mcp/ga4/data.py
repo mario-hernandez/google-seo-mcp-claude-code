@@ -18,6 +18,7 @@ from google.analytics.data_v1beta.types import (
     FilterExpressionList,
     Metric,
     MetricAggregation,
+    NumericValue,
     OrderBy,
     RunReportRequest,
 )
@@ -76,6 +77,12 @@ def _build_filter(spec: dict | None) -> FilterExpression | None:
                 ),
             )
         elif "numeric_value" in spec:
+            v = spec["numeric_value"]
+            numeric_value = (
+                NumericValue(int64_value=int(v))
+                if isinstance(v, int)
+                else NumericValue(double_value=float(v))
+            )
             f = Filter(
                 field_name=spec["field"],
                 numeric_filter=Filter.NumericFilter(
@@ -84,9 +91,7 @@ def _build_filter(spec: dict | None) -> FilterExpression | None:
                         spec.get("op", "GREATER_THAN"),
                         Filter.NumericFilter.Operation.GREATER_THAN,
                     ),
-                    value={"int64_value": int(spec["numeric_value"])}
-                    if isinstance(spec["numeric_value"], int)
-                    else {"double_value": float(spec["numeric_value"])},
+                    value=numeric_value,
                 ),
             )
         else:

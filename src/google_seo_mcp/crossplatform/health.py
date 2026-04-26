@@ -104,6 +104,12 @@ def _interpret(diagnosis: str, ratio: float | None) -> str:
             "blocking analytics on first page-view, broken JS on landing pages."
         )
     if diagnosis == "filter_issue":
+        if ratio is None:
+            return (
+                "GSC reports zero organic clicks but GA4 has organic sessions — "
+                "either organic traffic is mis-classified in GA4 (bot/internal/referral "
+                "wrongly bucketed as organic) or GSC has not yet indexed the property."
+            )
         return (
             f"GA4 reports {ratio:.0%} of GSC clicks — more sessions than searches. "
             "Possible causes: bot traffic not filtered, internal/dev traffic counted, "

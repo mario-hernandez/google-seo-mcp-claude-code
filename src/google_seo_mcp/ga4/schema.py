@@ -37,7 +37,7 @@ def _fetch_metadata(property_id: int | str) -> dict:
             "ui_name": m.ui_name,
             "description": m.description,
             "category": m.category,
-            "type": m.type_.name if m.type_ else "TYPE_UNSPECIFIED",
+            "type": m.type_.name if m.type_ is not None else "TYPE_UNSPECIFIED",
             "custom_definition": m.custom_definition,
         })
     return {"dimensions": dims, "metrics": metrics}

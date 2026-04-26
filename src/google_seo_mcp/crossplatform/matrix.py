@@ -121,6 +121,11 @@ def opportunity_matrix(
         }
 
     # ── 3) Merge + classify ─────────────────────────────────
+    # Use median opportunity score among the candidates as the "high" threshold —
+    # auto-calibrates to the site's traffic volume rather than using an arbitrary 50.
+    scores = sorted([c["gsc_opportunity_score"] for c in candidates])
+    opp_threshold = scores[len(scores) // 2] if scores else 0
+
     out = []
     for c in candidates:
         path = _to_path(c["page_url"], site_url)
@@ -128,8 +133,8 @@ def opportunity_matrix(
         cvr = (ga["conversions"] / ga["sessions"]) if ga["sessions"] else 0
         rev_per_session = (ga["revenue"] / ga["sessions"]) if ga["sessions"] else 0
 
-        # Classify
-        opp_high = c["gsc_opportunity_score"] > 50  # tweakable
+        # Classify (top half by opportunity = "high"; CVR ≥1% or rev/sess ≥ 0.5 = "high")
+        opp_high = c["gsc_opportunity_score"] >= opp_threshold and c["gsc_opportunity_score"] > 0
         ga4_high = cvr >= 0.01 or rev_per_session >= 0.5
         if opp_high and ga4_high:
             quadrant = "high_impact"
@@ -166,7 +171,7 @@ def opportunity_matrix(
     )
 
 
-def _to_path(page_url: str, site_url: str) -> str:
+def _to_path(page_url: str, site_url: str = "") -> str:
     """Convert a full URL to a path-only form for GA4 matching."""
     if not page_url:
         return ""

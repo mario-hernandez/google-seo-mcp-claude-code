@@ -37,9 +37,14 @@ mcp = FastMCP("google-seo-mcp")
 
 
 def _register(fn, *, name: str):
-    """Register a tool with a specific name and append the guardrail suffix."""
+    """Register a tool with a specific name and append the guardrail suffix.
+
+    Idempotent: detects whether the suffix has already been appended (so registering
+    the same function twice doesn't duplicate the suffix).
+    """
     base_doc = (fn.__doc__ or "").rstrip()
-    fn.__doc__ = base_doc + GUARDRAIL_SUFFIX
+    if not base_doc.endswith(GUARDRAIL_SUFFIX.rstrip()):
+        fn.__doc__ = base_doc + GUARDRAIL_SUFFIX
     return mcp.tool(name=name)(fn)
 
 

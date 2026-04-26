@@ -20,7 +20,7 @@ def list_properties() -> dict:
                 "account_display_name": summary.display_name,
                 "property": ps.property,
                 "property_display_name": ps.display_name,
-                "property_type": ps.property_type.name if ps.property_type else None,
+                "property_type": ps.property_type.name if ps.property_type is not None else None,
             })
     return with_meta(out, source="admin.account_summaries.list", property="*")
 
@@ -34,12 +34,12 @@ def get_property_details(property_id: int | str) -> dict:
         {
             "name": p.name,
             "display_name": p.display_name,
-            "industry_category": p.industry_category.name if p.industry_category else None,
+            "industry_category": p.industry_category.name if p.industry_category is not None else None,
             "time_zone": p.time_zone,
             "currency_code": p.currency_code,
             "create_time": p.create_time.isoformat() if p.create_time else None,
             "update_time": p.update_time.isoformat() if p.update_time else None,
-            "service_level": p.service_level.name if p.service_level else None,
+            "service_level": p.service_level.name if p.service_level is not None else None,
             "account": p.account,
         },
         source="admin.properties.get",

@@ -82,8 +82,9 @@ def traffic_drops(
         if click_delta >= 0:
             continue
         delta_pos = c.get("position", 99) - p.get("position", 0)
+        prev_impr = p.get("impressions", 0)
         delta_impr_pct = (
-            (c.get("impressions", 0) - p.get("impressions", 0)) / p.get("impressions", 1)
+            (c.get("impressions", 0) - prev_impr) / prev_impr if prev_impr else 0.0
         )
         ctr_ratio = (c.get("ctr", 0) / p["ctr"]) if p.get("ctr") else 1.0
 
@@ -176,7 +177,12 @@ def content_decay(site_url: str, top_n: int = 20, min_clicks_p3: int = 10) -> di
 def cannibalization(
     site_url: str, days: int = 28, min_impressions: int = 50, top_n: int = 20
 ) -> dict:
-    """Queries where >=2 pages on the same site are competing in search results."""
+    """Queries where >=2 pages on the same site are competing in search results.
+
+    `min_impressions` is applied to the AGGREGATED total per query (not per row),
+    so a query with two pages at 30 impressions each (60 total = real cannibalization)
+    is not silently filtered out.
+    """
     start, end = period(days)
     rows = query_search_analytics(
         get_webmasters(), site_url, start, end,
@@ -185,7 +191,7 @@ def cannibalization(
     bucket: dict[str, list[dict]] = {}
     for r in rows:
         keys = r.get("keys", [])
-        if len(keys) < 2 or r.get("impressions", 0) < min_impressions:
+        if len(keys) < 2:
             continue
         q, p = keys[0], keys[1]
         bucket.setdefault(q, []).append({
@@ -199,11 +205,14 @@ def cannibalization(
     for q, pages in bucket.items():
         if len(pages) < 2:
             continue
+        total_impr = sum(p["impressions"] for p in pages)
+        if total_impr < min_impressions:
+            continue
         pages.sort(key=lambda x: x["impressions"], reverse=True)
         conflicts.append({
             "query": q,
             "competing_pages": pages,
-            "total_impressions": sum(p["impressions"] for p in pages),
+            "total_impressions": total_impr,
             "total_clicks": sum(p["clicks"] for p in pages),
         })
     conflicts.sort(key=lambda x: x["total_impressions"], reverse=True)

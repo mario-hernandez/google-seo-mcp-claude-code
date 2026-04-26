@@ -35,7 +35,15 @@ def landing_page_full_diagnosis(
     gsc_start, gsc_end = gsc_period(days)
     ga_start, ga_end = ga_period(days)
 
+    # GSC stores absolute URLs in `page` dimension; GA4 stores path-only in
+    # `landingPagePlusQueryString`. Normalize once for each.
     path = _to_path(page_url)
+    if page_url.startswith("http"):
+        gsc_page_url = page_url
+    elif site_url.startswith("sc-domain:"):
+        gsc_page_url = f"https://{site_url[len('sc-domain:'):]}{path}"
+    else:
+        gsc_page_url = site_url.rstrip("/") + path
 
     # ── GSC: queries for this exact page ────────────────────
     gsc_rows = query_search_analytics(
@@ -47,7 +55,7 @@ def landing_page_full_diagnosis(
         dimension_filter_groups=[
             {
                 "filters": [
-                    {"dimension": "page", "operator": "equals", "expression": page_url}
+                    {"dimension": "page", "operator": "equals", "expression": gsc_page_url}
                 ]
             }
         ],

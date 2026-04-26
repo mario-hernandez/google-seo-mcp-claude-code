@@ -131,7 +131,8 @@ def gsc_to_ga4_journey(
                 "secondary_pages": [
                     {"page": r["pagePath"], "page_views": float(r["screenPageViews"])}
                     for r in next_pages
-                    if r.get("pagePath") != path
+                    # `pagePath` strips query string, so compare against path-without-query
+                    if r.get("pagePath") and r["pagePath"] != path.split("?")[0]
                 ][:10],
             },
         },

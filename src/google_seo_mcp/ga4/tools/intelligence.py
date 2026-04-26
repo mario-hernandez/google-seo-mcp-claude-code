@@ -235,11 +235,13 @@ def landing_page_health(
             score -= 15
         elif avg_dur < 60:
             score -= 5
+        # Zero conversions is worse than poor conversions — penalty must reflect that.
         if cvr == 0:
-            score -= 10
-        elif cvr < 0.01:
             score -= 15
+        elif cvr < 0.01:
+            score -= 10
 
+        score = max(0, score)
         tag = "red" if score < 50 else ("amber" if score < 75 else "green")
         out.append({
             "page": r["landingPagePlusQueryString"],
@@ -278,6 +280,10 @@ def conversion_funnel(
     start, end = period(days)
     if not steps:
         raise ValueError("steps must be a non-empty list of event names")
+    if len(steps) > 10:
+        raise ValueError(
+            f"conversion_funnel supports at most 10 steps to protect quota; got {len(steps)}"
+        )
 
     funnel = []
     prev_users: float | None = None
@@ -295,9 +301,11 @@ def conversion_funnel(
             aggregations=["TOTAL"],
         )["rows"]
         users = float(rows[0]["totalUsers"]) if rows else 0
-        drop_pct = None
-        if prev_users:
+        drop_pct: float | None = None
+        if prev_users is not None and prev_users > 0:
             drop_pct = round((1 - users / prev_users) * 100, 1)
+        elif prev_users == 0:
+            drop_pct = 100.0  # Trivial 100% drop from zero — natural interpretation
         funnel.append({
             "step": i + 1,
             "event": event,
@@ -390,11 +398,17 @@ def channel_attribution(
         ft = first_touch.get(c, 0)
         if max(lt, ft) == 0:
             continue
-        role = (
-            "closer" if lt > ft * 1.5
-            else "assister" if ft > lt * 1.5
-            else "balanced"
-        )
+        # Classify with explicit handling of zero edges.
+        if ft == 0 and lt > 0:
+            role = "pure_closer"  # never first-touched but does close
+        elif lt == 0 and ft > 0:
+            role = "pure_assister"  # only first-touches, never closes
+        elif lt > ft * 1.5:
+            role = "closer"
+        elif ft > lt * 1.5:
+            role = "assister"
+        else:
+            role = "balanced"
         out.append({
             "channel": c,
             f"{metric}_last_touch": lt,

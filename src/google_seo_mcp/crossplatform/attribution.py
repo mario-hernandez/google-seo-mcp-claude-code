@@ -70,7 +70,11 @@ def seo_to_revenue_attribution(
         )
 
     # ── 2) GA4 organic revenue per landing page ────────────
-    pages_to_query = list(page_clicks.keys())[:200]  # API filter cap
+    # Sort by click volume so we don't drop high-traffic pages by dict iteration order.
+    pages_to_query = [
+        p for p, _ in sorted(page_clicks.items(), key=lambda x: x[1], reverse=True)
+    ][:200]
+    dropped_pages = max(0, len(page_clicks) - len(pages_to_query))
     ga4_revenue: dict[str, dict] = {}
     for full_url in pages_to_query:
         path = _to_path(full_url)
@@ -128,7 +132,10 @@ def seo_to_revenue_attribution(
             "gsc": {"start": gsc_start, "end": gsc_end},
             "ga4": {"start": ga_start, "end": ga_end},
         },
-        extra={"attribution_model": "click_share_proportional"},
+        extra={
+            "attribution_model": "click_share_proportional",
+            "pages_dropped_due_to_filter_cap": dropped_pages,
+        },
     )
 
 

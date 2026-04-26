@@ -1,7 +1,7 @@
 """Anti-hallucination guardrails — _meta provenance on every tool response."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 GUARDRAIL_SUFFIX = (
@@ -27,7 +27,7 @@ def with_meta(
     """
     meta: dict[str, Any] = {
         "source": source,
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
+        "fetched_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     if site_url is not None:
         meta["site_url"] = site_url

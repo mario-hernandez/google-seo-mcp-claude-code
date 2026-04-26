@@ -82,14 +82,27 @@ def _from_oauth_flow() -> Any | None:
         return None
 
     token_path = _config_dir() / "token.json"
+    needed_scopes = _scopes()
     creds: Credentials | None = None
     if token_path.exists():
         try:
             creds = Credentials.from_authorized_user_info(
-                json.loads(token_path.read_text()), _scopes()
+                json.loads(token_path.read_text()), needed_scopes
             )
         except Exception as e:
             log.warning("Could not load cached token, re-authenticating: %s", e)
+            creds = None
+
+    # Detect scope upgrade — if the cached token doesn't grant all required scopes
+    # (e.g. user just enabled GSC_ALLOW_DESTRUCTIVE which expands `webmasters` scope),
+    # discard the cached token and force a fresh consent flow.
+    if creds is not None:
+        granted = set(getattr(creds, "scopes", None) or [])
+        if not set(needed_scopes).issubset(granted):
+            log.info(
+                "Cached token scopes %s missing required %s — forcing re-auth.",
+                granted, set(needed_scopes) - granted,
+            )
             creds = None
 
     if creds and not creds.valid:
@@ -99,7 +112,7 @@ def _from_oauth_flow() -> Any | None:
             creds = None
 
     if not creds:
-        flow = InstalledAppFlow.from_client_secrets_file(client_file, _scopes())
+        flow = InstalledAppFlow.from_client_secrets_file(client_file, needed_scopes)
         creds = flow.run_local_server(port=0, open_browser=True)
         token_path.write_text(creds.to_json())
         token_path.chmod(0o600)
