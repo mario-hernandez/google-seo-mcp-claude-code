@@ -77,7 +77,22 @@ def traffic_drops(
     for key, p in prev.items():
         if p.get("clicks", 0) < min_clicks_prior:
             continue
-        c = cur.get(key, {"clicks": 0, "impressions": 0, "ctr": 0, "position": p.get("position", 0)})
+        # A page that was in `prev` but not in `cur` has DISAPPEARED — it stopped
+        # appearing for any query. Diagnose explicitly; otherwise the default-fill
+        # below would mask it as ctr_collapse (zero CTR vs prior CTR).
+        if key not in cur:
+            drops.append({
+                "page": key[0] if key else "",
+                "diagnosis": "disappeared",
+                "current": {"clicks": 0, "impressions": 0, "ctr": 0, "position": None},
+                "previous": {k: p.get(k, 0) for k in ("clicks", "impressions", "ctr", "position")},
+                "click_delta": -p.get("clicks", 0),
+                "position_delta": None,
+                "impressions_delta_pct": -1.0,
+            })
+            continue
+
+        c = cur[key]
         click_delta = c.get("clicks", 0) - p.get("clicks", 0)
         if click_delta >= 0:
             continue

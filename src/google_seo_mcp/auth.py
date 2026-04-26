@@ -174,13 +174,28 @@ def get_admin_client() -> AnalyticsAdminServiceClient:
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-def reset_clients() -> None:
-    """Force rebuild on next access — used by `reauthenticate` tool."""
+def reset_clients(*, drop_oauth_token: bool = True) -> None:
+    """Force rebuild on next access — used by `reauthenticate` tool.
+
+    By default also deletes the cached OAuth `token.json` so that a fresh
+    consent flow runs on next use. Pass `drop_oauth_token=False` to keep the
+    cached token (useful when you only want to re-read ADC credentials after
+    a `gcloud auth application-default login`).
+    """
     global _searchconsole_service, _webmasters_service, _ga4_data_client, _ga4_admin_client
     _searchconsole_service = None
     _webmasters_service = None
     _ga4_data_client = None
     _ga4_admin_client = None
+
+    if drop_oauth_token:
+        token_path = _config_dir() / "token.json"
+        if token_path.exists():
+            try:
+                token_path.unlink()
+                log.info("Cleared cached OAuth token at %s", token_path)
+            except OSError as e:
+                log.warning("Could not delete cached token at %s: %s", token_path, e)
 
 
 def normalize_property(property_id: int | str) -> str:

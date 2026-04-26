@@ -33,11 +33,14 @@ def gsc_to_ga4_journey(
     citing both data sources and their respective time windows (note: GSC and GA4
     have different reporting lags, so the periods may differ by 2-3 days).
     """
-    # Normalize path
+    # Normalize path. GA4 expects path-only; GSC expects absolute URL.
     path = landing_path
     if path.startswith("http"):
         parsed = urlparse(path)
         path = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+    # Ensure path starts with exactly one "/" so concatenation can't create
+    # malformed URLs like "https://x.comblog/post" or "https://x.com//evil/x".
+    path = "/" + path.lstrip("/")
     full_page_url = (
         landing_path if landing_path.startswith("http")
         else (site_url.rstrip("/") + path if not site_url.startswith("sc-domain:")

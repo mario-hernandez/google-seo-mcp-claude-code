@@ -32,7 +32,7 @@ The reverse is also true. A GA4 MCP can spot that organic conversions cratered, 
 
 You need both. And you need the agent to reason **across both**, in one tool call, without hallucinating the join.
 
-## The five tools that only exist when GSC and GA4 share auth
+## The six tools that only exist when GSC and GA4 share auth
 
 I unified my own GSC and GA4 MCPs into one (`google-seo-mcp-claude-code`). The merge unlocked five tools that none of the seven competitors expose, because none of them speak both APIs:
 

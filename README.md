@@ -94,29 +94,32 @@ Ask Claude: *"Is the tracking healthy on example.com?"*
 
 ```json
 {
-  "diagnosis": "healthy",
-  "ratio_ga4_to_gsc": 0.608,
-  "gsc_organic_clicks": 477,
-  "ga4_organic_sessions": 290,
-  "interpretation": "GA4 reports 61% of GSC organic clicks — within the expected 0.6-1.4 range. Tracking is consistent."
-},
-"_meta": {
-  "source": "crossplatform.traffic_health_check",
-  "site_url": "https://www.example.com/",
-  "property": "properties/123456789",
-  "period": {
-    "gsc": { "start": "2026-03-27", "end": "2026-04-23" },
-    "ga4": { "start": "2026-03-29", "end": "2026-04-25" }
+  "data": {
+    "diagnosis": "healthy",
+    "ratio_ga4_to_gsc": 0.608,
+    "gsc_organic_clicks": 477,
+    "ga4_organic_sessions": 290,
+    "interpretation": "GA4 reports 61% of GSC organic clicks — within the expected 0.6-1.4 range. Tracking is consistent."
+  },
+  "_meta": {
+    "source": "crossplatform.traffic_health_check",
+    "site_url": "https://www.example.com/",
+    "property": "properties/123456789",
+    "period": {
+      "gsc": { "start": "2026-03-27", "end": "2026-04-23" },
+      "ga4": { "start": "2026-03-27", "end": "2026-04-23" }
+    },
+    "fetched_at": "2026-04-26T22:00:00Z"
   }
 }
 ```
 
-Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal because GSC counts every search-result-click while GA4 counts unique sessions (some users navigate away before analytics fires). Note how `_meta.period` cites both periods separately because GSC has a 3-day reporting lag while GA4 has only 1 day — the LLM can quote the exact dates without making them up.
+Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal because GSC counts every search-result-click while GA4 counts unique sessions (some users navigate away before analytics fires). Both periods are aligned to GSC's 3-day reporting lag so the comparison is apples-to-apples — the LLM can quote exact dates without making them up.
 
 ## All 33 tools
 
 <details open>
-<summary><b>🔄 Cross-platform (5 — the unique selling proposition)</b></summary>
+<summary><b>🔄 Cross-platform (6 — the unique selling proposition)</b></summary>
 
 | Tool | What it does |
 |------|--------------|
@@ -129,7 +132,7 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 </details>
 
 <details>
-<summary><b>🔎 Google Search Console (14)</b></summary>
+<summary><b>🔎 Google Search Console (12)</b></summary>
 
 | Tool | What it does |
 |------|--------------|
@@ -149,7 +152,7 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 </details>
 
 <details>
-<summary><b>📈 Google Analytics 4 (14)</b></summary>
+<summary><b>📈 Google Analytics 4 (13)</b></summary>
 
 | Tool | What it does |
 |------|--------------|

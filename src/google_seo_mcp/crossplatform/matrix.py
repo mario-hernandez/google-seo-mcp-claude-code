@@ -121,10 +121,20 @@ def opportunity_matrix(
         }
 
     # ── 3) Merge + classify ─────────────────────────────────
-    # Use median opportunity score among the candidates as the "high" threshold —
-    # auto-calibrates to the site's traffic volume rather than using an arbitrary 50.
-    scores = sorted([c["gsc_opportunity_score"] for c in candidates])
-    opp_threshold = scores[len(scores) // 2] if scores else 0
+    # Use the lower-median opportunity score as the "high" threshold — auto-calibrates
+    # to the site's traffic volume rather than using an arbitrary 50. With N<4 samples
+    # the median degenerates (e.g. N=2 picks the higher of two scores, leaving only
+    # the top-1 as "high"), so we fall back to a safer percentile and require min N.
+    import statistics as _stats
+    scores = sorted([c["gsc_opportunity_score"] for c in candidates if c["gsc_opportunity_score"] > 0])
+    if len(scores) >= 4:
+        opp_threshold = _stats.median(scores)
+    elif len(scores) >= 1:
+        # Too few candidates for a stable median: use the 25th percentile so at
+        # least the top-half-of-top-half qualifies as "high".
+        opp_threshold = scores[max(0, (len(scores) - 1) // 4)]
+    else:
+        opp_threshold = 0
 
     out = []
     for c in candidates:

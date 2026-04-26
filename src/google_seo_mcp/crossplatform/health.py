@@ -34,14 +34,20 @@ def traffic_health_check(
     """
     pid = normalize_property(property_id)
 
+    # Align both windows to the more lagged source (GSC, ~3 days) so we compare
+    # the same calendar dates on both sides. Otherwise GSC ends at t-3 and GA4
+    # ends at t-1, and a viral day in t-2 would falsely trip filter_issue.
+    from datetime import date
     gsc_start, gsc_end = gsc_period(days)
+    aligned_end = date.fromisoformat(gsc_end)
+    ga_start, ga_end = ga_period(days, end=aligned_end)
+
     gsc_rows = query_search_analytics(
         get_webmasters(), site_url, gsc_start, gsc_end, dimensions=[]
     )
     gsc_totals = aggregate_totals(gsc_rows)
     gsc_clicks = gsc_totals["clicks"]
 
-    ga_start, ga_end = ga_period(days)
     ga_rows = run_report(
         pid,
         start_date=ga_start,

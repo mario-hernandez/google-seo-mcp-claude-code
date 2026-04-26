@@ -10,11 +10,17 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
-# Credentials — never commit
-*.json
-credentials/
+# Credentials — explicit patterns (don't blanket-block *.json — breaks fixtures)
 token.json
 .token.json
+*-credentials.json
+*-credentials*.json
+client_secret*.json
+client_secrets*.json
+service-account*.json
+sa-*.json
+application_default_credentials.json
+credentials/
 
 # Generated reports
 gsc-reports/

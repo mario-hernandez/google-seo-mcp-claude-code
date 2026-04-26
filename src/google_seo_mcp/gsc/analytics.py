@@ -93,7 +93,7 @@ def _humanize_error(err: HttpError, site_url: str) -> RuntimeError:
     msg_map = {
         400: "Bad request to Search Console. Check date format (YYYY-MM-DD) and dimensions.",
         401: "Unauthenticated. Run `gcloud auth application-default login` with the "
-             "webmasters.readonly scope, or check GSC_OAUTH_CLIENT_FILE.",
+             "webmasters.readonly scope, or check GOOGLE_SEO_OAUTH_CLIENT_FILE.",
         403: f"Forbidden. The authenticated user does not have access to {site_url!r}. "
              "Verify the property in Search Console and grant access to the auth account.",
         404: f"Site {site_url!r} not found. List your sites with `list_sites`. "

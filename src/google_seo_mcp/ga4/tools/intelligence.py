@@ -70,7 +70,11 @@ def anomalies(
                 sigma = pstdev(others)
             except StatisticsError:
                 continue
-            if sigma == 0:
+            # Guard against near-zero variance: a series of [100, 100.001, 100, ...]
+            # has sigma≈1e-3 (not zero), and a single outlier of 500 would explode
+            # Z to millions. Require sigma to be meaningful both absolutely and
+            # relative to the mean (>1% of mean OR >0.5 absolute, whichever is stricter).
+            if sigma < max(0.5, abs(mu) * 0.01):
                 continue
             z = (v - mu) / sigma
             if abs(z) >= z_threshold:
@@ -150,15 +154,20 @@ def traffic_drops_by_channel(
             diagnoses.append("volume_loss")
         pe = float(prev.get("engagementRate", 0))
         ce = float(cur.get("engagementRate", 0))
-        if pe and (pe - ce) / pe >= 0.15:
+        # Engagement decay: BOTH relative drop ≥15% AND absolute drop ≥0.02 (2pp)
+        # — otherwise rates like 0.05→0.0399 (trivial 0.0001 absolute) trigger.
+        if pe and (pe - ce) >= 0.02 and (pe - ce) / pe >= 0.15:
             diagnoses.append("engagement_decay")
         pconv_per = float(prev.get("conversions", 0)) / ps if ps else 0
         cconv_per = float(cur.get("conversions", 0)) / cs if cs else 0
-        if pconv_per and (pconv_per - cconv_per) / pconv_per >= 0.25:
+        # Skip conversion_decay when sessions collapsed to zero — it's already
+        # captured by volume_loss and adding it is just redundant noise.
+        if cs > 0 and pconv_per and (pconv_per - cconv_per) / pconv_per >= 0.25:
             diagnoses.append("conversion_decay")
         pb = float(prev.get("bounceRate", 0))
         cb = float(cur.get("bounceRate", 0))
-        if pb and (cb - pb) / pb >= 0.15:
+        # Bounce surge: BOTH relative surge ≥15% AND absolute increase ≥0.05 (5pp)
+        if pb and (cb - pb) >= 0.05 and (cb - pb) / pb >= 0.15:
             diagnoses.append("bounce_surge")
         if not diagnoses:
             diagnoses.append("mild_decline")
