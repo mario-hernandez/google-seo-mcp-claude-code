@@ -20,6 +20,7 @@ from .crossplatform import health as cp_health
 from .crossplatform import journey as cp_journey
 from .crossplatform import matrix as cp_matrix
 from .crossplatform import multi_property as cp_multi
+from .crux import tools as crux_tools
 from .ga4.tools import admin as ga4_admin
 from .ga4.tools import intelligence as ga4_intel
 from .ga4.tools import reporting as ga4_reporting
@@ -27,6 +28,10 @@ from .gsc.tools import analytics as gsc_analytics
 from .gsc.tools import intelligence as gsc_intel
 from .gsc.tools import sitemaps as gsc_sitemaps
 from .gsc.tools import sites as gsc_sites
+from .indexing import tools as indexing_tools
+from .lighthouse import tools as lh_tools
+from .schema import tools as schema_tools
+from .trends import tools as trends_tools
 from .guardrails import GUARDRAIL_SUFFIX
 from .resources.google_algorithm_updates import algorithm_updates_text
 
@@ -96,6 +101,37 @@ _register(cp_matrix.opportunity_matrix, name="cross_opportunity_matrix")
 _register(cp_attr.seo_to_revenue_attribution, name="cross_seo_to_revenue_attribution")
 _register(cp_diag.landing_page_full_diagnosis, name="cross_landing_page_full_diagnosis")
 _register(cp_multi.multi_property_comparison, name="cross_multi_property_comparison")
+
+# ─── Lighthouse / PageSpeed Insights (5) ────────────────────
+_register(lh_tools.lighthouse_audit, name="lighthouse_audit")
+_register(lh_tools.lighthouse_core_web_vitals, name="lighthouse_core_web_vitals")
+_register(lh_tools.lighthouse_lcp_opportunities, name="lighthouse_lcp_opportunities")
+_register(lh_tools.lighthouse_compare_mobile_desktop, name="lighthouse_compare_mobile_desktop")
+_register(lh_tools.lighthouse_seo_score, name="lighthouse_seo_score")
+
+# ─── Chrome UX Report (real-user CWV) (3) ───────────────────
+_register(crux_tools.crux_current, name="crux_current")
+_register(crux_tools.crux_history, name="crux_history")
+_register(crux_tools.crux_compare_origins, name="crux_compare_origins")
+
+# ─── Schema.org / structured data (3) ───────────────────────
+_register(schema_tools.schema_extract_url, name="schema_extract_url")
+_register(schema_tools.schema_validate_url, name="schema_validate_url")
+_register(schema_tools.schema_suggest_for_page, name="schema_suggest_for_page")
+
+# ─── Sitemap submission / Indexing (5) ──────────────────────
+_register(indexing_tools.indexnow_generate_key, name="indexnow_generate_key")
+_register(indexing_tools.indexnow_submit, name="indexnow_submit")
+_register(indexing_tools.indexnow_submit_sitemap, name="indexnow_submit_sitemap")
+_register(indexing_tools.google_indexing_publish, name="google_indexing_publish")
+_register(indexing_tools.google_indexing_delete, name="google_indexing_delete")
+
+# ─── Trends / Suggest / Alerts (5) ───────────────────────────
+_register(trends_tools.google_suggest, name="google_suggest")
+_register(trends_tools.google_suggest_alphabet, name="google_suggest_alphabet")
+_register(trends_tools.google_trends_keyword, name="google_trends_keyword")
+_register(trends_tools.google_trends_related, name="google_trends_related")
+_register(trends_tools.alerts_rss_parse, name="alerts_rss_parse")
 
 
 # ─── MCP Resource: Google algorithm updates reference ────────
@@ -180,15 +216,34 @@ def get_capabilities() -> dict:
                 "cross_landing_page_full_diagnosis",
                 "cross_multi_property_comparison",
             ],
+            "lighthouse": [
+                "lighthouse_audit", "lighthouse_core_web_vitals",
+                "lighthouse_lcp_opportunities", "lighthouse_compare_mobile_desktop",
+                "lighthouse_seo_score",
+            ],
+            "crux": ["crux_current", "crux_history", "crux_compare_origins"],
+            "schema": [
+                "schema_extract_url", "schema_validate_url", "schema_suggest_for_page",
+            ],
+            "indexing": [
+                "indexnow_generate_key", "indexnow_submit", "indexnow_submit_sitemap",
+                "google_indexing_publish", "google_indexing_delete",
+            ],
+            "trends": [
+                "google_suggest", "google_suggest_alphabet",
+                "google_trends_keyword", "google_trends_related",
+                "alerts_rss_parse",
+            ],
             "meta": ["get_capabilities", "reauthenticate"],
             "resources": ["google-seo://algorithm-updates"],
         },
         "tip": (
-            "Workflow: (1) `gsc_list_sites` + `ga4_list_properties` to enumerate. "
-            "(2) `cross_traffic_health_check` to verify GSC↔GA4 tracking is consistent. "
-            "(3) `cross_opportunity_matrix` to surface pages where ranking up would also "
-            "convert. (4) `cross_landing_page_full_diagnosis` to triage one page end-to-end. "
-            "(5) `cross_seo_to_revenue_attribution` to see which queries actually pay."
+            "Swiss-knife workflow: (1) `gsc_list_sites` + `ga4_list_properties` to "
+            "enumerate. (2) `cross_traffic_health_check` to verify tracking. "
+            "(3) `lighthouse_audit` + `crux_current` for performance health. "
+            "(4) `cross_opportunity_matrix` for prioritisation. (5) `schema_validate_url` "
+            "to find rich-result gaps. (6) `google_suggest_alphabet` to discover "
+            "long-tails. (7) `indexnow_submit` to ping Bing/Yandex on changes."
         ),
     }
 

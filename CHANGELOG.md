@@ -4,7 +4,49 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] — 2026-04-27
+
+### Added — SEO swiss-knife expansion (21 new tools, 33 → 54)
+
+**Lighthouse / PageSpeed Insights v5** (5 tools, free 25k req/day):
+- `lighthouse_audit` — full mobile/desktop audit with perf/a11y/best-practices/SEO scores + CWV
+- `lighthouse_core_web_vitals` — LCP/CLS/TBT/FCP/Speed Index/TTI only
+- `lighthouse_lcp_opportunities` — actionable improvements ranked by estimated savings ms
+- `lighthouse_compare_mobile_desktop` — side-by-side delta (mobile regressions are common)
+- `lighthouse_seo_score` — SEO-category breakdown (meta descriptions, viewport, hreflang, etc.)
+
+**Chrome UX Report (real-user CWV)** (3 tools, free 150 QPS):
+- `crux_current` — latest 28-day field data for URL or origin
+- `crux_history` — up to 25 weekly snapshots (~6 months) of one metric, to correlate
+  with `gsc_traffic_drops` dates
+- `crux_compare_origins` — your origin vs a competitor
+
+**Schema.org / structured data** (3 tools, fully offline):
+- `schema_extract_url` — fetch URL + extract JSON-LD/microdata/RDFa via `extruct`
+- `schema_validate_url` — pre-flight checks for Article/Product/FAQPage/HowTo/Breadcrumb
+  (without external validator)
+- `schema_suggest_for_page` — recommend schemas given page intent
+
+**Sitemap & indexing submission** (5 tools):
+- `indexnow_generate_key` — 32-char ownership key for IndexNow
+- `indexnow_submit` — push URLs to Bing/Yandex/Seznam
+- `indexnow_submit_sitemap` — fetch sitemap.xml and chunk-submit (max 10k/chunk)
+- `google_indexing_publish` / `google_indexing_delete` — Google Indexing API
+  (gated by `GSC_ALLOW_DESTRUCTIVE=true`, requires `indexing` OAuth scope)
+
+**Trends / Suggest / Alerts** (5 tools, free):
+- `google_suggest` — autocomplete suggestions for one keyword
+- `google_suggest_alphabet` — 26-letter expansion (`keyword + a..z`) for long-tail discovery
+- `google_trends_keyword` — relative search interest timeline (pytrends)
+- `google_trends_related` — top + rising related queries
+- `alerts_rss_parse` — parse a Google Alerts RSS feed
+
+### Updated
+- `get_capabilities` now surfaces all 7 categories with the swiss-knife workflow tip
+- `pyproject.toml` adds deps: `httpx`, `extruct`, `pytrends`
+- 57 tests passing (1 updated count assertion)
+
+## [0.1.1] — 2026-04-27
 
 ### Added
 - This CHANGELOG.

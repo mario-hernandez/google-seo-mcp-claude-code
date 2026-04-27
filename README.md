@@ -57,7 +57,7 @@ Real prompts that fire real tool sequences (full playbook list in [`AGENTS.md`](
 
 ## What you actually get
 
-**33 tools + 1 reference resource** across three categories — and six of them are impossible without unified auth.
+**54 tools + 1 reference resource** across eight categories. Six of them are impossible without unified GSC+GA4 auth, and v0.2 adds Lighthouse, CrUX, Schema validation, IndexNow, and Google Trends/Suggest — the SEO swiss knife in one binary.
 
 - 🔄 **Cross-platform tools that nobody else has** — the whole reason this exists. `gsc_to_ga4_journey` traces an organic click to its conversion. `opportunity_matrix` scores pages by *both* "could rank higher" AND "would convert if it did". `traffic_health_check` detects when GSC and GA4 disagree (broken tracking). `seo_to_revenue_attribution` tells you which queries actually pay.
 - 🩺 **Diagnoses, not data dumps** — `gsc_traffic_drops` classifies pages as ranking_loss / CTR_collapse / demand_decline. `ga4_traffic_drops_by_channel` classifies channels as volume_loss / engagement_decay / conversion_decay / bounce_surge. Multi-axis taxonomy improved over the existing OSS competitors.
@@ -116,7 +116,7 @@ Ask Claude: *"Is the tracking healthy on example.com?"*
 
 Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal because GSC counts every search-result-click while GA4 counts unique sessions (some users navigate away before analytics fires). Both periods are aligned to GSC's 3-day reporting lag so the comparison is apples-to-apples — the LLM can quote exact dates without making them up.
 
-## All 33 tools
+## All 54 tools
 
 <details open>
 <summary><b>🔄 Cross-platform (6 — the unique selling proposition)</b></summary>
@@ -199,7 +199,7 @@ The OSS landscape has split GSC and GA4 into separate MCPs. This one unifies the
 | [**`Suganthan-Mohanadasan/Suganthans-GSC-MCP`**](https://github.com/Suganthan-Mohanadasan/Suganthans-GSC-MCP) (TypeScript) | Maximum tool surface for GSC alone. No GA4 integration. |
 | [**`saurabhsharma2u/search-console-mcp`**](https://github.com/saurabhsharma2u/search-console-mcp) (TypeScript) | The closest competitor: GSC + GA4 + Bing in 90+ tools. Pick if you live in TypeScript or need Bing. Z-score baseline contamination, fake funnel, no `_meta` provenance. |
 | [**`surendranb/google-analytics-mcp`**](https://github.com/surendranb/google-analytics-mcp) (Python) | Schema-discovery + row-count-probe for raw GA4. Single-property only, no diagnostic logic, no GSC. |
-| **This MCP** | **The unified Python suite: GSC + GA4 + 5 unique cross-platform tools (journey, opportunity matrix, health check, attribution, full diagnosis), with anti-hallucination provenance, leave-one-out Z-score, real funnels, and read-only-by-default safety.** Pick if your agent reports to clients and you can't afford a hallucinated number — or a missed cross-source insight. |
+| **This MCP** | **The unified Python SEO swiss-knife: GSC + GA4 + 6 unique cross-platform tools + Lighthouse/PSI + CrUX + Schema validation + IndexNow/Google Indexing + Google Trends/Suggest/Alerts. 54 tools, anti-hallucination provenance on every response, leave-one-out Z-score, real funnels, read-only-by-default.** Pick if you want one binary to cover the whole audit-to-action loop without paying SaaS for what's just a free Google API away. |
 
 This MCP started as a security-audited synthesis of seven open-source projects — credits at the bottom.
 
