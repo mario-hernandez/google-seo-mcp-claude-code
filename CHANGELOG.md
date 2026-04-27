@@ -10,15 +10,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - This CHANGELOG.
 
 ### Removed
-- `ULTIMACONVERSACION.md` (personal session-resume note) accidentally tracked in v0.1.0;
-  now in `.gitignore`. Contained only a local home-directory path and a public OSS
-  email — no credentials. Past versions are still reachable via git history but the
-  HEAD is clean.
+- A personal session-resume markdown note accidentally tracked in v0.1.0;
+  now in `.gitignore`. Contained only a local home-directory path and a
+  public OSS email — no credentials.
 
 ### Changed
-- README example anonymised: `example.com` / `properties/123456789` →
-  `example.com` / `properties/123456789`. The previous values were valid public
-  identifiers but belonged to the author's employer; cleaner to use placeholders.
+- README example anonymised to use generic `example.com` / `properties/123456789`
+  placeholders instead of identifiers from the author's employer. The previous
+  values were valid public identifiers, not credentials; this is just hygiene.
+- Git history rewritten on 2026-04-27 to remove the same identifiers from
+  past commits. Tag `v0.1.1` was force-updated to point at the cleaned history.
 
 ### Fixed
 - **`gsc_traffic_drops`** now correctly classifies pages absent from the current
