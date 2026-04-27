@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - This CHANGELOG.
 
+### Removed
+- `ULTIMACONVERSACION.md` (personal session-resume note) accidentally tracked in v0.1.0;
+  now in `.gitignore`. Contained only a local home-directory path and a public OSS
+  email — no credentials. Past versions are still reachable via git history but the
+  HEAD is clean.
+
+### Changed
+- README example anonymised: `example.com` / `properties/123456789` →
+  `example.com` / `properties/123456789`. The previous values were valid public
+  identifiers but belonged to the author's employer; cleaner to use placeholders.
+
 ### Fixed
 - **`gsc_traffic_drops`** now correctly classifies pages absent from the current
   period as `"disappeared"` (previously fell through to `ctr_collapse`).
