@@ -312,6 +312,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `GOOGLE_SEO_SERVICE_ACCOUNT_FILE` | — | Service account key path |
 | `GSC_ALLOW_DESTRUCTIVE` | `false` | Enables sitemap submission and write-scope OAuth |
 | `GSC_CTR_BENCHMARKS` | conservative defaults | Comma-separated 10 floats overriding per-position expected CTR |
+| `PAGESPEED_API_KEY` | — | API key for Lighthouse/PSI **and** CrUX. Without it, the anonymous quota is shared and frequently 429-throttled. Create one at [console.cloud.google.com](https://console.cloud.google.com) — enable PageSpeed Insights API + Chrome UX Report API, then create an API key restricted to those two services. The same key works for both. |
+| `CRUX_API_KEY` | (falls back to `PAGESPEED_API_KEY`) | Alternative if you prefer separate keys |
 | `GOOGLE_SEO_LOG_LEVEL` | `INFO` | Python log level |
 
 ## Design principles

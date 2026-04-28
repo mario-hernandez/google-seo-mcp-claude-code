@@ -4,6 +4,14 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+- README and AGENTS.md now mention the optional `PAGESPEED_API_KEY` env var
+  required to use Lighthouse and CrUX tools beyond the anonymous quota
+  (which is shared and tends to be 429-throttled). Same key works for both
+  APIs when the GCP project has them enabled.
+
 ## [0.2.0] — 2026-04-27
 
 ### Added — SEO swiss-knife expansion (21 new tools, 33 → 54)
