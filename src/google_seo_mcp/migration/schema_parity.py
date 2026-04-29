@@ -31,6 +31,9 @@ CRITICAL_PROPS = {
 
 
 def _fetch_jsonld(url: str, timeout: float = 30.0) -> list[dict[str, Any]]:
+    from ..security import assert_url_is_public
+
+    assert_url_is_public(url)
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "

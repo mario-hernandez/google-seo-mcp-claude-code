@@ -34,6 +34,13 @@ def wayback_baseline(
     entry has ``original_url``, ``archived_url`` (the wayback link),
     ``timestamp``, ``status``, ``mime_type``.
     """
+    from ..security import assert_url_is_public
+
+    # We talk to web.archive.org (always public), so the SSRF guard checks
+    # the user-supplied origin only — to stop someone shipping a CDX-style
+    # request whose effective target is internal.
+    if origin_url.startswith(("http://", "https://")):
+        assert_url_is_public(origin_url)
     # Strip protocol for the CDX query (Wayback handles both http/https)
     host = origin_url.replace("https://", "").replace("http://", "").rstrip("/")
     cdx_url = (

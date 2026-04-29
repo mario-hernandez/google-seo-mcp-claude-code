@@ -13,6 +13,8 @@ from typing import Any
 
 import httpx
 
+from ..security import assert_url_is_public
+
 
 def _decode(s: str | None) -> str | None:
     """Decode HTML entities (&iquest; → ¿) so semantic comparisons aren't fooled
@@ -95,23 +97,53 @@ def _extract_signals(html: str, url: str) -> dict[str, Any]:
     return signals
 
 
+# Cloudflare cache status interpretation. Without this the double-fetch
+# logic in cloaking.py treats a HIT/MISS swap (normal cache lifecycle) as
+# divergence (cloaking artifact). Edge engineer demanded an explicit map.
+_CF_CACHE_STATUS_DOC = {
+    "HIT": "Served from cache",
+    "MISS": "Cache miss, proxied to origin and not (yet) cached",
+    "EXPIRED": "Cache hit but stale, revalidated against origin",
+    "STALE": "Stale cache hit served while revalidating (SWR)",
+    "BYPASS": "Page Rule / Worker / Cache-Control forced cache bypass",
+    "DYNAMIC": "Asset deemed uncacheable; never cached",
+    "REVALIDATED": "Cached copy revalidated and reused (304)",
+    "UPDATING": "Stale served while a fresh copy is being fetched",
+    "NONE/UNKNOWN": "Cloudflare did not classify (rare)",
+}
+
+
+def _cf_cache_status_meaning(value: str | None) -> str | None:
+    if not value:
+        return None
+    return _CF_CACHE_STATUS_DOC.get(value.upper(), f"Unrecognised: {value!r}")
+
+
 def fetch_as(url: str, ua: str, timeout: float = 30.0) -> str:
     """Fetch URL with a specific User-Agent. Raises RuntimeError on HTTP errors."""
     return fetch_as_with_meta(url, ua, timeout=timeout, raise_on_error=True)["text"]
 
 
 def fetch_as_with_meta(
-    url: str, ua: str, timeout: float = 30.0, raise_on_error: bool = False
+    url: str,
+    ua: str,
+    timeout: float = 30.0,
+    raise_on_error: bool = False,
+    accept_language: str = "en-US,en;q=0.9",
+    capture_redirects: bool = False,
 ) -> dict[str, Any]:
     """Fetch URL with a UA and return text + status + headers + Cloudflare metadata.
 
-    Returns ``{"text": str, "status": int, "headers": dict, "cf": {...}}``. Use
-    ``raise_on_error=True`` to mimic ``fetch_as`` legacy behaviour.
+    Returns ``{"text": str, "status": int, "headers": dict, "cf": {...}}``.
+    Set ``capture_redirects=True`` to also return a ``redirects`` list with
+    every hop (so a migration tool can audit chains that CF/Workers add).
+    Use ``raise_on_error=True`` to mimic ``fetch_as`` legacy behaviour.
     """
+    assert_url_is_public(url)
     headers = {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": accept_language,
     }
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
@@ -121,16 +153,48 @@ def fetch_as_with_meta(
     if raise_on_error and resp.status_code >= 400:
         raise RuntimeError(f"HTTP {resp.status_code} at {url}")
     h = {k.lower(): v for k, v in resp.headers.items()}
+    redirect_chain: list[dict[str, Any]] = []
+    if capture_redirects:
+        for hop in list(resp.history) + [resp]:
+            hh = {k.lower(): v for k, v in hop.headers.items()}
+            redirect_chain.append({
+                "url": str(hop.url),
+                "status": hop.status_code,
+                "location": hh.get("location"),
+                "cf_ray": hh.get("cf-ray"),
+                "cf_cache_status": hh.get("cf-cache-status"),
+                "cf_mitigated": hh.get("cf-mitigated"),
+                "x_amz_cf_pop": hh.get("x-amz-cf-pop"),
+                "x_served_by": hh.get("x-served-by"),
+                "x_vercel_cache": hh.get("x-vercel-cache"),
+                "x_akamai_cache_status": hh.get("x-akamai-cache-status"),
+            })
     return {
         "text": resp.text,
         "status": resp.status_code,
         "headers": h,
+        "redirects": redirect_chain,
+        "redirect_chain_length": len(resp.history),
         "cf": {
             "mitigated": h.get("cf-mitigated"),
             "cache_status": h.get("cf-cache-status"),
+            "cache_status_meaning": _cf_cache_status_meaning(h.get("cf-cache-status")),
             "ray": h.get("cf-ray"),
             "vary": h.get("vary", ""),
             "server": h.get("server", ""),
+        },
+        # Multi-CDN signals — present when the upstream CDN sets them
+        "edge": {
+            "akamai_cache_status": h.get("x-akamai-cache-status"),
+            "akamai_x_cache": h.get("x-cache"),
+            "fastly_served_by": h.get("x-served-by"),
+            "fastly_cache": h.get("x-cache"),
+            "fastly_debug": h.get("fastly-debug-digest"),
+            "vercel_cache": h.get("x-vercel-cache"),
+            "vercel_id": h.get("x-vercel-id"),
+            "netlify_request_id": h.get("x-nf-request-id"),
+            "cloudfront_pop": h.get("x-amz-cf-pop"),
+            "cloudfront_id": h.get("x-amz-cf-id"),
         },
     }
 
@@ -141,9 +205,17 @@ def prerender_signals(url: str) -> dict[str, Any]:
     Use this to validate the pre-rendered output of an SSR pipeline before
     React/Vue/Svelte hydration. Detects missing meta, missing schema, SPA
     shell pages (no real content), etc.
+
+    Third-party text fields (title, meta_description, og, h1) are wrapped
+    as ``<untrusted-third-party-content>...</untrusted-third-party-content>``
+    so an LLM consuming this output cannot be hijacked by prompt-injection
+    payloads embedded in the page metadata.
     """
+    from ..security import mark_third_party_strings
+
     html = fetch_as(url, USER_UA)
     sig = _extract_signals(html, url)
+    sig = mark_third_party_strings(sig)
 
     issues: list[str] = []
     if not sig["title"]:

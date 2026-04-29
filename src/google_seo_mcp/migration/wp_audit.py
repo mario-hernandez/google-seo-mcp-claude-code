@@ -45,6 +45,9 @@ def _http() -> httpx.Client:
 
 def wp_summary(wp_url: str) -> dict[str, Any]:
     """High-level inventory via WP REST API: post types, taxonomies, plugin probes."""
+    from ..security import assert_url_is_public
+
+    assert_url_is_public(wp_url)
     root = _site_root(wp_url)
     out: dict[str, Any] = {
         "site_root": root,

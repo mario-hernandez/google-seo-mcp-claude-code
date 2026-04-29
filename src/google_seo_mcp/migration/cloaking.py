@@ -25,9 +25,12 @@ cloaking detectors):
 """
 from __future__ import annotations
 
+import os
+import secrets
 import socket
 import time
 from typing import Any
+from urllib.parse import urlencode, urlparse, urlunparse
 
 from .prerender import _extract_signals, fetch_as_with_meta
 
@@ -190,27 +193,41 @@ def googlebot_diff(url: str) -> dict[str, Any]:
     bot_sig = _extract_signals(bot_meta["text"], url)
     user_sig = _extract_signals(user_meta["text"], url)
 
-    # G5: cache divergence — if signatures differ, double-fetch user side
-    # with a 5s gap and inspect cf-cache-status to detect a cache artifact.
+    # G5: cache divergence — when signatures differ, force a cache-bust
+    # second fetch and wait ≥30s (CF Tiered Cache + Cache Reserve can take
+    # 30-90s to converge between POPs; 5s is theatre that misclassifies
+    # warmup as divergence). The bust appends a random query param ignored
+    # by most caching layers and forces an origin hit on the second pass.
     cache_artifact = False
     if _meta_signature(bot_sig) != _meta_signature(user_sig):
-        time.sleep(5)
-        user_meta_2 = fetch_as_with_meta(url, USER_UA)
-        user_sig_2 = _extract_signals(user_meta_2["text"], url)
-        cache_a = user_meta["cf"].get("cache_status")
-        cache_b = user_meta_2["cf"].get("cache_status")
-        if (
-            cache_a != cache_b
-            and _meta_signature(user_sig) != _meta_signature(user_sig_2)
-        ):
-            cache_artifact = True
-            fp_filters.append("cache_status_changed_between_fetches")
-            notes.append(
-                f"Same UA produced different output across fetches (cf-cache-status: "
-                f"{cache_a!r} → {cache_b!r}). Difference is a cache artifact, not cloaking."
-            )
-            # Use the second (warm) fetch as the user reference
-            user_sig = user_sig_2
+        wait_s = int(os.getenv("CLOAKING_CACHE_CONVERGE_S", "30"))
+        time.sleep(wait_s)
+        # Append cache-bust param so we deterministically pull from origin
+        p = urlparse(url)
+        bust_qs = (p.query + "&" if p.query else "") + urlencode(
+            {"_gscmcp_cb": secrets.token_hex(6)}
+        )
+        bust_url = urlunparse(p._replace(query=bust_qs))
+        try:
+            user_meta_2 = fetch_as_with_meta(bust_url, USER_UA)
+        except Exception:  # noqa: BLE001 — network errors don't invalidate the diff
+            user_meta_2 = None
+        if user_meta_2 is not None:
+            user_sig_2 = _extract_signals(user_meta_2["text"], url)
+            cache_a = user_meta["cf"].get("cache_status")
+            cache_b = user_meta_2["cf"].get("cache_status")
+            if (
+                cache_a != cache_b
+                and _meta_signature(user_sig) != _meta_signature(user_sig_2)
+            ):
+                cache_artifact = True
+                fp_filters.append("cache_status_changed_between_fetches")
+                notes.append(
+                    f"Same UA produced different output across fetches (cf-cache-status: "
+                    f"{cache_a!r} → {cache_b!r}). Difference is a cache artifact, not cloaking."
+                )
+                # Use the second (warm) fetch as the user reference
+                user_sig = user_sig_2
 
     # G1 already applied: _extract_signals decodes HTML entities via _decode().
     # Compare semantic fields after decoding.

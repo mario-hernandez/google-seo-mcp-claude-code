@@ -1,55 +1,103 @@
 """Sitemap parsing + diff for migration planning."""
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+# defusedxml protects against billion-laughs / quadratic blowup / external
+# entity attacks when the LLM is asked (potentially via prompt injection)
+# to parse a hostile sitemap.
+from defusedxml.ElementTree import ParseError, fromstring
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
-UA = "google-seo-mcp/0.3 sitemap-diff"
+from ..security import assert_url_is_public
+
+UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+)
+
+# XML namespaces commonly seen in sitemaps
+_NS = {
+    "sm": "http://www.sitemaps.org/schemas/sitemap/0.9",
+    "xhtml": "http://www.w3.org/1999/xhtml",
+}
+
+# Body size cap (10 MB). Sitemaps that exceed this are pathological.
+_MAX_BODY_BYTES = 10 * 1024 * 1024
 
 
 def parse_sitemap(url: str, max_urls: int = 50000) -> list[str]:
-    """Recursively parse a sitemap (or sitemap index) and return all URLs.
+    """Backwards-compatible: returns flat list of URLs (no hreflang)."""
+    return [e["url"] for e in parse_sitemap_with_alternates(url, max_urls=max_urls)]
 
-    Supports nested sitemap indexes. Caps at max_urls to avoid runaway parses.
+
+def parse_sitemap_with_alternates(url: str, max_urls: int = 50000) -> list[dict[str, Any]]:
+    """Recursively parse a sitemap (or sitemap index) with hreflang alternates.
+
+    Returns a list of ``{"url": str, "alternates": {hreflang: href, ...}}``.
+    The alternate dict captures ``<xhtml:link rel="alternate" hreflang>``
+    siblings that Google recommends for multi-language sitemaps. Earlier
+    versions silently ignored these — Inditex / Booking-class sitemaps
+    were treated as monolingual.
     """
+    assert_url_is_public(url)
     try:
-        with httpx.Client(timeout=30.0, follow_redirects=True, headers={"User-Agent": UA}) as c:
+        with httpx.Client(
+            timeout=30.0, follow_redirects=True, headers={"User-Agent": UA}
+        ) as c:
             resp = c.get(url)
     except httpx.HTTPError as e:
         raise RuntimeError(f"Sitemap fetch failed: {e}") from None
     if resp.status_code >= 400:
         raise RuntimeError(f"Sitemap returned {resp.status_code} at {url}")
+    body = resp.content
+    if len(body) > _MAX_BODY_BYTES:
+        raise RuntimeError(
+            f"Sitemap body exceeds {_MAX_BODY_BYTES} bytes ({len(body)}); refusing to parse."
+        )
 
     try:
-        root = ET.fromstring(resp.text)
-    except ET.ParseError as e:
+        root = fromstring(body)
+    except ParseError as e:
         raise RuntimeError(f"Could not parse sitemap XML: {e}") from None
 
-    ns = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
-    urls: list[str] = []
+    entries: list[dict[str, Any]] = []
 
     # URL set
-    for loc in root.findall(".//sm:url/sm:loc", ns):
-        if loc.text:
-            urls.append(loc.text.strip())
-            if len(urls) >= max_urls:
-                return urls
+    for url_node in root.findall(".//sm:url", _NS):
+        loc = url_node.find("sm:loc", _NS)
+        if loc is None or not loc.text:
+            continue
+        entry: dict[str, Any] = {"url": loc.text.strip(), "alternates": {}}
+        for alt in url_node.findall("xhtml:link", _NS):
+            rel = (alt.attrib.get("rel") or "").lower()
+            if rel != "alternate":
+                continue
+            hreflang = (alt.attrib.get("hreflang") or "").strip()
+            href = (alt.attrib.get("href") or "").strip()
+            if hreflang and href:
+                entry["alternates"][hreflang] = href
+        entries.append(entry)
+        if len(entries) >= max_urls:
+            return entries
 
     # Sitemap index — recurse
-    for sub in root.findall(".//sm:sitemap/sm:loc", ns):
+    for sub in root.findall(".//sm:sitemap/sm:loc", _NS):
         if not sub.text:
             continue
         try:
-            urls.extend(parse_sitemap(sub.text.strip(), max_urls=max_urls - len(urls)))
+            entries.extend(
+                parse_sitemap_with_alternates(
+                    sub.text.strip(), max_urls=max_urls - len(entries)
+                )
+            )
         except Exception:
             continue
-        if len(urls) >= max_urls:
+        if len(entries) >= max_urls:
             break
 
-    return urls[:max_urls]
+    return entries[:max_urls]
 
 
 def sitemap_diff(old_sitemap_url: str, new_sitemap_url: str) -> dict[str, Any]:
@@ -103,11 +151,36 @@ def sitemap_validate(sitemap_url: str, sample_size: int = 50, timeout: float = 1
     status_counts: dict[str, int] = {"2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0, "error": 0}
     failures: list[dict] = []
 
-    with httpx.Client(timeout=timeout, follow_redirects=False, headers={"User-Agent": UA}) as c:
-        for u in sample:
+    # Concurrent GET (with Range: 0-0 for efficiency) — many origins behind
+    # CF / Workers reject HEAD with 405. Range avoids downloading the body.
+    # Retry once on 503/504 (CDN incident or rolling-deploy hiccup).
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _check_one(client: httpx.Client, u: str) -> tuple[str, int | None, str | None]:
+        for attempt in (1, 2):
             try:
-                r = c.head(u)
-                code = r.status_code
+                r = client.get(u, headers={"Range": "bytes=0-0"})
+                if r.status_code in (503, 504) and attempt == 1:
+                    time.sleep(0.5)
+                    continue
+                return u, r.status_code, None
+            except Exception as e:  # noqa: BLE001 — collect any network error
+                if attempt == 1:
+                    time.sleep(0.5)
+                    continue
+                return u, None, str(e)[:100]
+        return u, None, "exhausted retries"
+
+    import time
+    with httpx.Client(timeout=timeout, follow_redirects=False, headers={"User-Agent": UA}) as c:
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            futures = [pool.submit(_check_one, c, u) for u in sample]
+            for f in as_completed(futures):
+                u, code, err = f.result()
+                if err:
+                    status_counts["error"] += 1
+                    failures.append({"url": u, "error": err})
+                    continue
                 bucket = (
                     "2xx" if 200 <= code < 300 else
                     "3xx" if 300 <= code < 400 else
@@ -118,9 +191,6 @@ def sitemap_validate(sitemap_url: str, sample_size: int = 50, timeout: float = 1
                 status_counts[bucket] += 1
                 if code >= 400:
                     failures.append({"url": u, "status": code})
-            except Exception as e:
-                status_counts["error"] += 1
-                failures.append({"url": u, "error": str(e)[:100]})
 
     return {
         "sitemap_url": sitemap_url,

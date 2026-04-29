@@ -14,6 +14,8 @@ def search_analytics(
     dimensions: list[str] | None = None,
     row_limit: int = 1000,
     search_type: str = "web",
+    country: str | None = None,
+    device: str | None = None,
 ) -> dict:
     """Custom Search Analytics query.
 
@@ -23,7 +25,27 @@ def search_analytics(
         dimensions: e.g. ["query"], ["page"], ["query","page"], ["country"], ["device"].
         row_limit: Max rows (server-side cap 25000).
         search_type: "web" | "image" | "video" | "news".
+        country: ISO-3166 alpha-3 (e.g. "esp", "mex", "arg") to filter
+            results to a single market. Critical for multi-region post-
+            migration audits ("did I lose LATAM?"). Lowercased automatically.
+        device: "DESKTOP" | "MOBILE" | "TABLET" filter.
     """
+    filters: list[dict] = []
+    if country:
+        filters.append({
+            "dimension": "country",
+            "operator": "equals",
+            "expression": country.lower(),
+        })
+    if device:
+        filters.append({
+            "dimension": "device",
+            "operator": "equals",
+            "expression": device.upper(),
+        })
+    dim_filter_groups = (
+        [{"filters": filters}] if filters else None
+    )
     rows = query_search_analytics(
         get_webmasters(),
         site_url,
@@ -32,12 +54,14 @@ def search_analytics(
         dimensions=dimensions or [],
         row_limit=row_limit,
         search_type=search_type,
+        dimension_filter_groups=dim_filter_groups,
     )
     return with_meta(
         rows,
         source="webmasters.searchanalytics.query",
         site_url=site_url,
         period={"start": start_date, "end": end_date},
+        extra={"filters": {"country": country, "device": device}},
     )
 
 

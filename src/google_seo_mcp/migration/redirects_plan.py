@@ -181,15 +181,33 @@ def export_redirects_apache(plan: list[dict]) -> str:
 
 
 def export_redirects_cloudflare(plan: list[dict]) -> list[dict]:
-    """Render a migration plan as Cloudflare Bulk Redirects JSON."""
-    rules = []
+    """Render a migration plan as Cloudflare Bulk Redirects (Lists API JSON).
+
+    Schema follows the official `wrangler` / Lists API: source_url MUST
+    include the scheme, target_url is absolute, and the entry is wrapped
+    under a ``redirect`` key. Earlier versions emitted ``netloc + path``
+    which the dashboard import rejected.
+
+    Cloudflare Free Lists allow up to 10 000 entries per list; Enterprise
+    raises this to 100 000. We expose the count via the wrapper but do
+    not split — slicing into multiple Lists is the caller's choice.
+    """
+    rules: list[dict] = []
     for r in plan:
-        old_p = urlparse(r["from"])
+        # Ensure scheme on source — fall back to https when caller stored
+        # netloc-only URLs.
+        src = r["from"]
+        if not src.startswith(("http://", "https://")):
+            src = "https://" + src.lstrip("/")
         rules.append({
-            "source_url": f"{old_p.netloc}{old_p.path}",
-            "target_url": r["to"],
-            "status_code": 301,
-            "preserve_query_string": True,
-            "preserve_path_suffix": False,
+            "redirect": {
+                "source_url": src,
+                "target_url": r["to"],
+                "status_code": 301,
+                "include_subdomains": False,
+                "subpath_matching": False,
+                "preserve_query_string": True,
+                "preserve_path_suffix": False,
+            },
         })
     return rules

@@ -75,8 +75,11 @@ def indexnow_submit_sitemap(
     chunked — we do that automatically and return one result per chunk.
     """
     import httpx
-    import xml.etree.ElementTree as ET
+    from defusedxml import ElementTree as ET  # XXE-safe replacement
 
+    from ..security import assert_url_is_public
+
+    assert_url_is_public(sitemap_url)
     try:
         with httpx.Client(timeout=30.0) as client:
             resp = client.get(sitemap_url)

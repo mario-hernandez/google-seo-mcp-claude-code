@@ -36,6 +36,9 @@ def _extract_hreflangs(html: str) -> list[dict[str, str]]:
 
 
 def _fetch(url: str, timeout: float = 30.0) -> str:
+    from ..security import assert_url_is_public
+
+    assert_url_is_public(url)
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "

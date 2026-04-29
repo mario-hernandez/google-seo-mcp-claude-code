@@ -1,7 +1,7 @@
 """Trends, Suggest, and Alerts tools."""
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from defusedxml import ElementTree as ET  # XXE-safe replacement
 from typing import Any
 from urllib.parse import urlencode
 

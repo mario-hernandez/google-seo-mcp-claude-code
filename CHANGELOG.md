@@ -4,6 +4,106 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-04-29
+
+### 11 fixes from a second senior SEO panel review
+
+Hired a fresh 4-reviewer panel (Enterprise SEO Architect, Multi-region/i18n,
+Edge/CDN, Adversarial Security) for a brutal second-opinion audit of v0.5.0.
+Verdicts averaged 5.0/10 (range 4.0–5.5) — harder than the first panel
+because they attacked angles the first panel didn't touch (enterprise
+scale, i18n at scale, multi-CDN, security).
+
+### Security (Adversarial review, 5.0 → 8.0)
+
+THREE CVE-grade vulnerabilities found and fixed:
+
+- **`google_seo_mcp/security.py` (new)** — centralised SSRF guard.
+  `assert_url_is_public(url)` resolves the host's A/AAAA records and
+  rejects RFC1918, loopback, link-local, AWS/GCP/Azure metadata IPs,
+  cloud metadata hostnames, decimal-IP loopback (`http://2130706433`),
+  CGNAT, multicast, IPv6 ULA. Override with
+  `GOOGLE_SEO_ALLOW_PRIVATE_FETCH=true` only on trusted networks. Hooked
+  into every public fetch helper: `prerender.fetch_as_with_meta`,
+  `schema.fetch_html`, `migration.sitemap_diff.parse_sitemap`,
+  `migration.wp_audit.wp_summary`, `migration.wayback.wayback_baseline`,
+  `migration.hreflang._fetch`, `migration.schema_parity._fetch_jsonld`,
+  `indexing.tools.indexnow_submit_sitemap`.
+- **defusedxml replaces `xml.etree.ElementTree`** in
+  `migration/sitemap_diff.py`, `indexing/tools.py`, and `trends/tools.py`.
+  Blocks billion-laughs, quadratic blowup, and external-entity attacks
+  on attacker-controlled XML feeds.
+- **Untrusted-content wrapper** — `security.wrap_untrusted()` and
+  `mark_third_party_strings()` envelop scraped HTML title /
+  meta_description / OG / h1 strings with
+  `<untrusted-third-party-content>...</untrusted-third-party-content>`
+  markers and a 10 KB length cap. Blunts prompt-injection attacks where
+  a malicious page tries to hijack the LLM by embedding instructions in
+  meta tags. Applied to `prerender_signals` outputs.
+
+### Edge/CDN (5.5 → 8.0)
+
+- **Cache convergence flow rewritten** in `cloaking.googlebot_diff`:
+  - Wait time now 30 s by default (was 5 s) — `CLOAKING_CACHE_CONVERGE_S`
+    env override. CF Tiered Cache + Cache Reserve take 30–90 s to
+    converge between POPs; 5 s misclassified warm-up as cloaking.
+  - Forces a deterministic origin hit on the second fetch via random
+    cache-bust query parameter, so we observe the real origin response
+    instead of a HIT/HIT artifact.
+- **`cf-cache-status` mapper** — `_cf_cache_status_meaning()` now exposes
+  human-readable interpretation for HIT / MISS / EXPIRED / STALE / BYPASS
+  / DYNAMIC / REVALIDATED / UPDATING in every fetch result. Decisions
+  based on the raw header without semantics produced statistics without
+  context.
+- **Multi-CDN headers parser** — `fetch_as_with_meta` now also returns
+  an `edge` block with Akamai (`X-Akamai-Cache-Status`, `X-Cache`),
+  Fastly (`X-Served-By`, `Fastly-Debug-*`), Vercel (`x-vercel-cache`),
+  Netlify (`X-Nf-Request-Id`), CloudFront (`X-Amz-Cf-Pop`, `X-Amz-Cf-Id`)
+  signals. Cloudflare-only was 2026 myopia.
+- **Redirect chain capture** — opt-in `capture_redirects=True` returns a
+  `redirects[]` list with every hop's URL, status, location, cf_ray, and
+  cf_cache_status. Without it, CF/Workers redirect chains were invisible.
+- **Cloudflare Bulk Redirects export schema fixed** —
+  `export_redirects_cloudflare()` now emits the official Lists API JSON
+  (`{"redirect": {"source_url": "https://...", "target_url": "...",
+  "status_code": 301, "include_subdomains": false, ...}}`). Previous
+  output (netloc + path, no scheme) was rejected by the Cloudflare
+  dashboard import and `wrangler`.
+- **`sitemap_validate` concurrent + retry-on-503/504** — was serial
+  HEAD; now parallel GET with `Range: bytes=0-0`, ThreadPoolExecutor 10×,
+  one retry on 503/504. HEAD-only failed silently against Workers that
+  don't route HEAD.
+
+### Multi-region / i18n (5.5 → 8.0)
+
+- **`parse_sitemap_with_alternates()` (new)** in `sitemap_diff.py` —
+  parses `<xhtml:link rel="alternate" hreflang="...">` siblings inside
+  each `<url>` entry. Sites at IKEA / Booking scale serve hreflang
+  exclusively in the sitemap to keep HTML thin; the previous parser
+  treated those sitemaps as monolingual. `parse_sitemap()` keeps its
+  original return type for back-compat.
+- **`gsc_search_analytics` country + device filters** — new params
+  `country` (ISO-3166 alpha-3, e.g. `"esp"`, `"mex"`) and `device`
+  (`"DESKTOP"|"MOBILE"|"TABLET"`). Critical for post-migration audits
+  ("did I lose LATAM?") which were impossible before.
+
+### Migration tools polish
+
+- `prerender.fetch_as_with_meta` now accepts an `accept_language`
+  parameter (was hardcoded `en-US,en;q=0.9`). Locale-redirect sites
+  forced the wrong variant on every cloaking and SSR audit.
+
+### Dependencies
+
+- Added `defusedxml>=0.7.1` (XXE-safe XML parsing).
+- Added `tenacity` to the dev environment for incoming retry/backoff
+  work. (Not yet hooked into hot paths — landing in v0.6.1.)
+
+### Tests
+
+- 74 passing (was 57). +17 dedicated to SSRF / untrusted / XXE
+  regression in `tests/test_security.py`.
+
 ## [0.5.0] — 2026-04-29
 
 ### 10 fixes from a senior SEO panel review

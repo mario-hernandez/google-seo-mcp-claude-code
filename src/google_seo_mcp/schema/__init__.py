@@ -26,6 +26,13 @@ _REAL_USER_UA = (
 
 
 def fetch_html(url: str, timeout: float = 30.0, user_agent: str | None = None) -> str:
+    from ..security import assert_url_is_public
+
+    assert_url_is_public(url)
+    return _fetch_html_inner(url, timeout=timeout, user_agent=user_agent)
+
+
+def _fetch_html_inner(url: str, timeout: float = 30.0, user_agent: str | None = None) -> str:
     """Fetch a URL's HTML using a realistic browser User-Agent.
 
     Schema extraction MUST see the same HTML a real user / Googlebot sees.
