@@ -30,6 +30,7 @@ from .gsc.tools import sitemaps as gsc_sitemaps
 from .gsc.tools import sites as gsc_sites
 from .indexing import tools as indexing_tools
 from .lighthouse import tools as lh_tools
+from .migration import tools as migration_tools
 from .schema import tools as schema_tools
 from .trends import tools as trends_tools
 from .guardrails import GUARDRAIL_SUFFIX
@@ -133,6 +134,23 @@ _register(trends_tools.google_trends_keyword, name="google_trends_keyword")
 _register(trends_tools.google_trends_related, name="google_trends_related")
 _register(trends_tools.alerts_rss_parse, name="alerts_rss_parse")
 
+# ─── Migration: WP equity + SSR verify + sitemap diff (14) ───
+_register(migration_tools.wp_audit_site, name="migration_wp_audit_site")
+_register(migration_tools.wp_extract_redirects, name="migration_wp_extract_redirects")
+_register(migration_tools.wp_internal_links_graph, name="migration_wp_internal_links_graph")
+_register(migration_tools.prerender_check, name="migration_prerender_check")
+_register(migration_tools.prerender_vs_hydrated, name="migration_prerender_vs_hydrated")
+_register(migration_tools.googlebot_diff, name="migration_googlebot_diff")
+_register(migration_tools.multi_bot_diff, name="migration_multi_bot_diff")
+_register(migration_tools.verify_googlebot_ip, name="migration_verify_googlebot_ip")
+_register(migration_tools.sitemap_diff, name="migration_sitemap_diff")
+_register(migration_tools.sitemap_validate, name="migration_sitemap_validate")
+_register(migration_tools.migration_redirects_plan, name="migration_redirects_plan")
+_register(migration_tools.export_redirects_nginx, name="migration_export_redirects_nginx")
+_register(migration_tools.export_redirects_apache, name="migration_export_redirects_apache")
+_register(migration_tools.export_redirects_cloudflare, name="migration_export_redirects_cloudflare")
+_register(migration_tools.seo_equity_report, name="migration_seo_equity_report")
+
 
 # ─── MCP Resource: Google algorithm updates reference ────────
 @mcp.resource("google-seo://algorithm-updates")
@@ -233,6 +251,23 @@ def get_capabilities() -> dict:
                 "google_suggest", "google_suggest_alphabet",
                 "google_trends_keyword", "google_trends_related",
                 "alerts_rss_parse",
+            ],
+            "migration": [
+                "migration_wp_audit_site",
+                "migration_wp_extract_redirects",
+                "migration_wp_internal_links_graph",
+                "migration_prerender_check",
+                "migration_prerender_vs_hydrated",
+                "migration_googlebot_diff",
+                "migration_multi_bot_diff",
+                "migration_verify_googlebot_ip",
+                "migration_sitemap_diff",
+                "migration_sitemap_validate",
+                "migration_redirects_plan",
+                "migration_export_redirects_nginx",
+                "migration_export_redirects_apache",
+                "migration_export_redirects_cloudflare",
+                "migration_seo_equity_report",
             ],
             "meta": ["get_capabilities", "reauthenticate"],
             "resources": ["google-seo://algorithm-updates"],

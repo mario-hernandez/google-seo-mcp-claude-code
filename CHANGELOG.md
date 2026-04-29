@@ -4,7 +4,58 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] — 2026-04-29
+
+### Added — Migration module (15 new tools, 54 → 69 total)
+
+A new module `migration/` for sites moving from WordPress to a modern JS
+stack (React + Node SSR + pre-render). All tools are read-only on the
+source site. Designed around three real workflows:
+
+**WordPress equity extraction (3 tools)**:
+- `migration_wp_audit_site` — REST API inventory: post types, taxonomies,
+  plugin probes (Redirection / RankMath / Yoast Premium), URL list
+- `migration_wp_extract_redirects` — enumerate redirects from common plugins
+- `migration_wp_internal_links_graph` — advertools crawl + in/out degree
+  per page, orphan detection, top hubs
+
+**SSR / pre-render verification (5 tools)**:
+- `migration_prerender_check` — fetch URL without JS, verify SEO signals
+  (title, meta, OG, schema, canonical, h1, visible text)
+- `migration_prerender_vs_hydrated` — diff curl HTML vs Playwright DOM
+  after hydration (lazy import; install `playwright` extra)
+- `migration_googlebot_diff` — UA diff Googlebot vs user, detects cloaking
+- `migration_multi_bot_diff` — three-way diff (Googlebot / Bingbot / user)
+- `migration_verify_googlebot_ip` — reverse-DNS check per Google's spec
+
+**Sitemap diff + 301 redirects planner (7 tools)**:
+- `migration_sitemap_diff` — URLs added/removed/common between two sitemaps
+- `migration_sitemap_validate` — HEAD-check sample of URLs, status dist
+- `migration_redirects_plan` — fuzz-match old → new URLs (rapidfuzz)
+- `migration_export_redirects_nginx` / `_apache` / `_cloudflare` — render
+  the plan as deployable config
+
+**Composer**:
+- `migration_seo_equity_report` — combines WP inventory + advertools crawl +
+  GSC clicks + internal-link graph into a 0-100 equity score per URL with
+  classification (MUST_PRESERVE / WORTH_PRESERVING / LOW_VALUE / DEPRECATE)
+
+### New deps
+
+- `advertools>=0.16.0` (Scrapy-based crawler, 1.4k stars OSS)
+- `rapidfuzz>=3.0.0` (slug similarity, 1MB)
+- `playwright>=1.40.0` (optional, only for `prerender_vs_hydrated` —
+  install with `pip install google-seo-mcp[ssr]`)
+
+### Bug fixed pre-release
+
+- `_extract_signals` now decodes HTML entities (`&iquest;` → `¿`) before
+  comparison so encoding differences don't trigger false-positive cloaking
+  alerts. Detected during smoke test against example.com (WordPress
+  serves entity-encoded vs UTF-8 to different UAs but both are
+  semantically identical).
+
+## [0.2.1] — 2026-04-27
 
 ### Documentation
 - README and AGENTS.md now mention the optional `PAGESPEED_API_KEY` env var
