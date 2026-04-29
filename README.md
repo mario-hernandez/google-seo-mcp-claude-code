@@ -21,6 +21,8 @@
 
 > Stop running two MCPs. Stop pasting reports into ChatGPT. Connect both Google Search Console and Google Analytics 4 to Claude as native tools — with the cross-platform diagnostics that actually matter for SEO: which pages would convert if they ranked higher, which queries pay, where tracking is broken, and what the full journey looks like from organic click to revenue.
 
+> **v0.7.1** — multi-client production hardening. Four senior SEO panels (14 reviewers) audited the codebase and the team fixed every P0 / P1 they raised. Account rotation between clients no longer leaks data, GA4 empty values no longer crash tools, the auth singletons are thread-safe with atomic token writes, advertools/Scrapy can no longer corrupt the JSON-RPC channel, and `_meta` provenance now coerces datetime / Decimal / set / Path / numpy scalars into JSON-safe primitives. **78 tools, 92 regression tests, 0 known crashes, multi-tenant safe.** See [`CHANGELOG.md`](CHANGELOG.md) for the line-by-line trail.
+
 <p align="center">
   <img src="docs/why-unified.png" alt="Two isolated MCP servers vs one unified MCP — unified unlocks cross-platform tools (journey, opportunity matrix, traffic health check)" width="100%">
 </p>
@@ -57,13 +59,14 @@ Real prompts that fire real tool sequences (full playbook list in [`AGENTS.md`](
 
 ## What you actually get
 
-**78 tools + 1 reference resource** across nine categories. Six of them are impossible without unified GSC+GA4 auth, and v0.2 adds Lighthouse, CrUX, Schema validation, IndexNow, and Google Trends/Suggest — the SEO swiss knife in one binary.
+**78 tools + 1 reference resource** across ten categories. Six of them are impossible without unified GSC+GA4 auth; the rest stitch in Lighthouse, CrUX, Schema validation, IndexNow, Google Trends/Suggest/Alerts, full WordPress→JS migration tooling, AEO (`llms.txt` + AI bot policy), and crawl-budget audits — the SEO swiss knife in one binary, no SaaS subscription needed for the 95% case.
 
-- 🔄 **Cross-platform tools that nobody else has** — the whole reason this exists. `gsc_to_ga4_journey` traces an organic click to its conversion. `opportunity_matrix` scores pages by *both* "could rank higher" AND "would convert if it did". `traffic_health_check` detects when GSC and GA4 disagree (broken tracking). `seo_to_revenue_attribution` tells you which queries actually pay.
-- 🩺 **Diagnoses, not data dumps** — `gsc_traffic_drops` classifies pages as ranking_loss / CTR_collapse / demand_decline. `ga4_traffic_drops_by_channel` classifies channels as volume_loss / engagement_decay / conversion_decay / bounce_surge. Multi-axis taxonomy improved over the existing OSS competitors.
-- 🔍 **Anti-hallucination guardrails** — every response is wrapped with `_meta` provenance (source, site_url, property, period, fetched_at). Your agent literally cannot make up the numbers when reporting to clients. <img src="docs/spot-provenance.png" alt="Provenance shield — verifiable source, period, and fetched_at on every response" width="60" align="right">
-- 📐 **Rigorous statistics** — `ga4_anomalies` uses leave-one-out rolling Z-score (vs the contaminated-baseline approach in some other MCPs). `gsc_content_decay` requires 3 monotonic 30-day windows before flagging. Real funnels via sequential filters. Pearson correlation in pagespeed analyses.
-- 🛡️ **Read-only by default** — destructive operations (sitemap submission, etc.) require an explicit `GSC_ALLOW_DESTRUCTIVE=true` flag.
+- 🔄 **Cross-platform tools that nobody else has** — the whole reason this exists. `gsc_to_ga4_journey` traces an organic click to its conversion. `opportunity_matrix` scores pages by *both* "could rank higher" AND "would convert if it did". `traffic_health_check` detects when GSC and GA4 disagree (broken tracking). `seo_to_revenue_attribution` tells you which queries actually pay (with a 50% confidence band, not as a measurement).
+- 🩺 **Diagnoses, not data dumps** — `gsc_traffic_drops` classifies pages as `ranking_loss` / `ctr_collapse` / `demand_decline` / `disappeared`. `ga4_traffic_drops_by_channel` classifies channels as `volume_loss` / `engagement_decay` / `conversion_decay` / `bounce_surge`. Multi-axis taxonomy improved over the existing OSS competitors.
+- 🔍 **Anti-hallucination guardrails** — every response is wrapped with `_meta` provenance (source, site_url, property, period, fetched_at) and passed through a `_json_safe` coercer that handles datetime / Decimal / set / Path / numpy / pandas scalars before the JSON-RPC transport sees them. Your agent literally cannot make up the numbers when reporting to clients. <img src="docs/spot-provenance.png" alt="Provenance shield — verifiable source, period, and fetched_at on every response" width="60" align="right">
+- 📐 **Rigorous statistics** — `ga4_anomalies` runs STL deseasonalisation (period=7) before a leave-one-out rolling Z-score, then applies Benjamini–Hochberg FDR correction when a dimension is set. `gsc_content_decay` requires 3 monotonic 30-day windows before flagging. Real funnels via sequential filters. Pearson correlation in pagespeed analyses.
+- 🛡️ **Read-only by default** — destructive operations (sitemap submission, Google Indexing API publish/delete) require an explicit `GSC_ALLOW_DESTRUCTIVE=true` flag.
+- 🔐 **Hardened for multi-client work (v0.7.1)** — SSRF guard rejects RFC1918 / loopback / cloud-metadata IPs (override with `GOOGLE_SEO_ALLOW_PRIVATE_FETCH=true` if needed). XML parsing via `defusedxml` (XXE-safe). Scraped HTML / OG / meta returned to the LLM is wrapped in `<untrusted-third-party-content>` markers. Auth singletons are thread-safe with double-checked locking, and a credentials fingerprint detects account rotation between clients so tools never silently keep returning data from the previous tenant.
 
 ## The six cross-platform killers
 
@@ -118,6 +121,8 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 
 ## All 78 tools
 
+11 categories. Bold counts — verified against `mcp._tool_manager.list_tools()` on the v0.7.1 release.
+
 <details open>
 <summary><b>🔄 Cross-platform (6 — the unique selling proposition)</b></summary>
 
@@ -126,8 +131,9 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 | `cross_gsc_to_ga4_journey` | Given a landing path, returns GSC top queries + GA4 behavior on that page |
 | `cross_opportunity_matrix` | GSC quick-win pages ranked by GA4 conversion potential, in 4 quadrants |
 | `cross_traffic_health_check` | GSC clicks vs GA4 sessions ratio with `tracking_gap` / `filter_issue` / `healthy` diagnosis |
-| `cross_seo_to_revenue_attribution` | Top organic queries attributed to GA4 revenue by click-share |
+| `cross_seo_to_revenue_attribution` | Top organic queries attributed to GA4 revenue by click-share (with 50% confidence band) |
 | `cross_landing_page_full_diagnosis` | End-to-end page diagnosis: GSC + GA4 + cannibalization + score + issues |
+| `cross_multi_property_comparison` | Parallel fan-out for ≤50 GA4 properties (multi-location dashboards) |
 
 </details>
 
@@ -140,10 +146,10 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 | `gsc_inspect_url` | URL Inspection API — index status, canonical, mobile, rich results |
 | `gsc_list_sitemaps` | Sitemaps with errors / warnings / last-submitted |
 | `gsc_submit_sitemap` | Submit a sitemap (gated by `GSC_ALLOW_DESTRUCTIVE=true`) |
-| `gsc_search_analytics` | Custom Search Analytics query |
+| `gsc_search_analytics` | Custom Search Analytics query — supports `country` (ISO-3166 alpha-3) and `device` filters |
 | `gsc_site_snapshot` | Aggregated totals last N days vs prior period |
 | `gsc_quick_wins` | Queries in positions 4-15, scored by `impressions × CTR-gap-to-pos-3` |
-| `gsc_traffic_drops` | Pages losing traffic, classified `ranking_loss` / `ctr_collapse` / `demand_decline` |
+| `gsc_traffic_drops` | Pages losing traffic, classified `ranking_loss` / `ctr_collapse` / `demand_decline` / `disappeared` |
 | `gsc_content_decay` | Pages with monotonic decline across 3 consecutive 30-day windows |
 | `gsc_cannibalization` | Queries where ≥2 pages on your site compete |
 | `gsc_ctr_opportunities` | Pages with CTR far below the expected for their position |
@@ -152,7 +158,7 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 </details>
 
 <details>
-<summary><b>📈 Google Analytics 4 (13)</b></summary>
+<summary><b>📈 Google Analytics 4 (14)</b></summary>
 
 | Tool | What it does |
 |------|--------------|
@@ -162,10 +168,11 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 | `ga4_list_schema_categories` | Cheap discovery of available dim/metric categories |
 | `ga4_estimate_query_size` | Anti-context-blowup probe (`limit=1` → reads `row_count` for free) |
 | `ga4_query` | Full Data API report with filters, order_bys, aggregations |
-| `ga4_anomalies` | Daily spikes/drops via leave-one-out Z-score, optionally segmented |
+| `ga4_anomalies` | STL-deseasonalised + leave-one-out Z-score + Benjamini–Hochberg FDR correction |
 | `ga4_traffic_drops_by_channel` | Channels in decline, multi-axis: volume / engagement / conversion / bounce |
 | `ga4_landing_page_health` | Health score (red/amber/green) for top landing pages |
-| `ga4_conversion_funnel` | Step-by-step user counts with severity-tagged drop-off |
+| `ga4_event_volume_comparison` | Per-event unique-user counts (was `conversion_funnel`; renamed for honesty — GA4 Data API can't enforce sequence) |
+| `ga4_conversion_funnel` | Deprecated alias of `event_volume_comparison` (kept for back-compat) |
 | `ga4_cohort_retention` | New vs returning visitor metrics |
 | `ga4_channel_attribution` | First-touch vs last-touch comparison; classifies as assister / closer / balanced |
 | `ga4_content_decay` | GA4 metric decline across 3 consecutive 30-day windows (any metric) |
@@ -173,7 +180,105 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 </details>
 
 <details>
-<summary><b>🛠️ Meta</b></summary>
+<summary><b>🚚 Migration (21 — WordPress → JS stack equity preservation)</b></summary>
+
+| Tool | What it does |
+|------|--------------|
+| `migration_seo_equity_report` | Composer: WP REST + crawl + GSC + internal-link graph → equity score per URL with `MUST_PRESERVE` / `WORTH_PRESERVING` / `LOW_VALUE` / `DEPRECATE` tags |
+| `migration_wp_audit_site` | WordPress REST inventory: post types, taxonomies, plugin probes |
+| `migration_wp_extract_redirects` | Enumerate redirects from Redirection / RankMath / Yoast Premium |
+| `migration_wp_internal_links_graph` | advertools crawl → in/out degree, orphans, top hubs |
+| `migration_sitemap_diff` | Old vs new sitemap with `xhtml:link` hreflang alternate parsing |
+| `migration_sitemap_validate` | Concurrent GET (Range: bytes=0-0) + retry on 503/504 |
+| `migration_redirects_plan` | Hybrid exact + rapidfuzz match with collision + self-redirect detection |
+| `migration_export_redirects_nginx` / `_apache` / `_cloudflare` | 301 rules in three formats (CF schema follows official Lists API) |
+| `migration_googlebot_diff` | Mobile-first Googlebot UA vs user UA with 5 anti-FP guards (cf-mitigated, Vary, html.unescape, A/B threshold 30%, cache-bust double-fetch) |
+| `migration_multi_bot_diff` | Same diff across Googlebot + Bingbot + user UAs |
+| `migration_verify_googlebot_ip` | rDNS forward+backward validation of a server-log IP |
+| `migration_prerender_check` | Pre-JS HTML SEO signals + shell-only soft-404 detection |
+| `migration_prerender_vs_hydrated` | Playwright DOM diff with optional `wrs_realistic=True` (5s budget, console errors, hydration mismatches) |
+| `migration_schema_parity_check` | JSON-LD types + critical props old vs new with parity_score |
+| `migration_hreflang_cluster_audit` | Reciprocity + region-aware (es-ES ≠ es-MX) cross-domain support |
+| `migration_indexation_recovery_monitor` | Post-launch GSC URL Inspection batch with INDEXED / DISCOVERED / SOFT_404 / BLOCKED classification |
+| `migration_wayback_baseline` | Internet Archive CDX snapshot inventory as historical anchor |
+| `migration_robots_audit` | robots.txt sitemaps declared, crawl-delay, disallow counts, sample-path verdicts |
+| `migration_robots_diff` | Old vs new robots.txt × GSC ranked paths → `newly_blocked` flag |
+
+</details>
+
+<details>
+<summary><b>⚡ Lighthouse / PageSpeed Insights (5)</b></summary>
+
+| Tool | What it does |
+|------|--------------|
+| `lighthouse_audit` | Full PSI audit; surfaces lab + CrUX field data (`loadingExperience`) |
+| `lighthouse_core_web_vitals` | LCP + CLS lab + INP/LCP/CLS field + TBT/FCP/SI/TTI under `lab_metrics` |
+| `lighthouse_lcp_opportunities` | Filtered to LCP-relevant audits via `auditRefs.relevantAudits` |
+| `lighthouse_compare_mobile_desktop` | Side-by-side perf score delta |
+| `lighthouse_seo_score` | Lighthouse SEO category breakdown |
+
+</details>
+
+<details>
+<summary><b>📊 CrUX — Chrome User Experience Report (3)</b></summary>
+
+| Tool | What it does |
+|------|--------------|
+| `crux_current` | Latest 28-day p75 with auto-fallback URL→origin and `scope` tag |
+| `crux_history` | Up to 25 weekly snapshots (~6 months) for one metric |
+| `crux_compare_origins` | Side-by-side with `winner` / `metric_unit` / interpretation |
+
+</details>
+
+<details>
+<summary><b>🏷️ Schema.org / JSON-LD (3)</b></summary>
+
+| Tool | What it does |
+|------|--------------|
+| `schema_extract_url` | Extract JSON-LD + microdata + RDFa via extruct |
+| `schema_validate_url` | Lightweight validation against 40+ types (incl. `MedicalWebPage`, `ClaimReview`, `DefinedTerm`, `JobPosting`) |
+| `schema_suggest_for_page` | Heuristic schema suggestions by content_type |
+
+</details>
+
+<details>
+<summary><b>📝 Indexing (5)</b></summary>
+
+| Tool | What it does |
+|------|--------------|
+| `indexnow_generate_key` | 32-char key for Bing/Yandex IndexNow |
+| `indexnow_submit` | Submit a list of URLs |
+| `indexnow_submit_sitemap` | Parse sitemap and submit (chunked at 10k URLs) |
+| `google_indexing_publish` | URL_UPDATED notification (gated by `GSC_ALLOW_DESTRUCTIVE=true`) |
+| `google_indexing_delete` | URL_DELETED notification (gated) |
+
+</details>
+
+<details>
+<summary><b>📈 Trends / Suggest / Alerts (5)</b></summary>
+
+| Tool | What it does |
+|------|--------------|
+| `google_suggest` | Google autocomplete for a seed query |
+| `google_suggest_alphabet` | Seed × A-Z fan-out (~110 long-tails per seed) |
+| `google_trends_keyword` | pytrends interest-over-time + region |
+| `google_trends_related` | Top + rising related queries |
+| `alerts_rss_parse` | Parse a Google Alerts RSS feed for brand mentions |
+
+</details>
+
+<details>
+<summary><b>🤖 AEO — Answer Engine Optimisation (2)</b></summary>
+
+| Tool | What it does |
+|------|--------------|
+| `aeo_llms_txt_check` | Verify `/llms.txt` + `/llms-full.txt` against the [llmstxt.org](https://llmstxt.org) spec |
+| `aeo_ai_bots_robots_audit` | Per-bot allow/block for 16 AI/LLM crawlers (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot, Bytespider, etc.) with vendor + purpose + docs |
+
+</details>
+
+<details>
+<summary><b>🛠️ Meta (2)</b></summary>
 
 | Tool | What it does |
 |------|--------------|
@@ -342,15 +447,35 @@ The file is designed to be pasted directly into the system prompt or attached as
 
 ## Testing
 
-```bash
-# Unit tests with mocks (no network)
-.venv/bin/pytest tests/ -v
+Three layers of tests, run them in order on any new client setup:
 
-# End-to-end smoke test against your real Google APIs
+### 1. Unit tests (no network, ~3 seconds)
+
+```bash
+.venv/bin/pytest tests/ -q
+```
+
+92 tests covering auth fingerprint detection, atomic token writes, `_json_safe` JSON-RPC coercion (datetime / Decimal / set / Path / numpy / bytes / weird types), `float("")` regression on empty GA4 metrics, KeyError regression on raw GSC subscripts, SSRF guard against RFC1918/loopback/cloud-metadata, XXE protection in sitemap parsing, equity URL normalisation, rapidfuzz no-match graceful path, etc.
+
+### 2. Integration smoke against your real Google APIs (~30 seconds)
+
+```bash
 .venv/bin/python scripts/smoke_test.py
 ```
 
-The smoke test probes all six layers of the MCP (auth, admin discovery, reporting, intelligence, cross-platform, resource) and surfaces real bugs the way they'll appear in production. It's the first thing to run after any code change.
+Probes all six layers of the MCP (auth, admin discovery, reporting, intelligence, cross-platform, resource) using the first GSC site / GA4 property your account can see. It's the first thing to run after any code change or before promoting to a new client.
+
+### 3. Per-client validation (~2 minutes)
+
+When onboarding a new client, run the full client probe to verify every tool category responds against their data:
+
+```bash
+.venv/bin/python scripts/client_probe.py \
+    --gsc-site "https://example.com/" \
+    --ga4-property "properties/123456789"
+```
+
+Outputs a JSON report with one row per tool, status `OK` / `SKIP` (gated/optional) / `FAIL` (real bug to investigate), timing, and a summary of any actionable findings against the client's data (CTR opportunities, traffic drops, indexation gaps, AEO gaps, multi-tenant safety check).
 
 ## Predecessors
 
