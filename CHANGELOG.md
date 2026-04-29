@@ -4,6 +4,110 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-04-29
+
+### 10 fixes from a senior SEO panel review
+
+Hired four senior reviewers (Tech SEO Lead, Migration Specialist, Performance
+Engineer, Cloaking Forensics) who line-by-line audited the codebase and
+returned 6.0–7.0/10 verdicts. The fixes below address every consensus
+finding without breaking back-compat.
+
+### Fixed — Cloaking detector (Forensics review, 6.5→8.5)
+
+- **Mobile-first index by default**: `GOOGLEBOT_UA` is now the smartphone
+  variant Chrome/130 — Google has been mobile-first since 2020, the
+  desktop UA we shipped tested the *non-indexed* variant. Killed the
+  literal `Chrome/W.X.Y.Z` placeholder that Cloudflare bot management
+  blocklists as a spoof signature. Added `GOOGLEBOT_DESKTOP_UA`,
+  `GOOGLEBOT_IMAGE_UA`, `GOOGLEBOT_NEWS_UA`, `ADSBOT_UA`, `ADSBOT_MOBILE_UA`
+  for completeness.
+- **`_meta_signature` now includes `meta_robots` and the OG dict**. The
+  highest-value cloaking vector — `noindex` injected only for users — was
+  invisible to cache-divergence detection.
+
+### Fixed — Lighthouse / PSI tools (CWV review, 6.0→8.0)
+
+- **`loadingExperience` and `originLoadingExperience` field data are now
+  surfaced** in every Lighthouse audit response. PSI embeds them for free
+  in the same JSON we already fetch; the previous version threw it away
+  and shipped lab-only audits. Added `extract_field_data()` helper.
+- **Renamed `core_web_vitals` → `core_web_vitals_lab`**, kept only LCP/CLS
+  there (INP is field-only, Lighthouse can't measure it directly). TBT,
+  FCP, Speed Index, TTI moved under `lab_metrics` with TBT explicitly
+  labelled `tbt_proxy_for_inp`. The official CWV trio in 2026 is
+  LCP + INP + CLS, not the six-pack we were exposing.
+- **`lighthouse_lcp_opportunities` now filters by `auditRefs.relevantAudits`**
+  so only LCP-impacting audits are returned in
+  `lcp_relevant_opportunities`. Other performance opportunities go into
+  `other_performance_opportunities` — separated, not blended.
+
+### Fixed — CrUX tools
+
+- **`crux_current` auto-falls back to origin** when the URL is not in the
+  public dataset. Output gains `scope: "url" | "origin_fallback"` so the
+  agent can disclose that it's looking at origin-aggregated data.
+- **`crux_compare_origins` now returns `winner`, `metric_unit`, and
+  `interpretation`**. Lower p75 is better; the previous version reported a
+  raw delta with no semantics — a 0.05 delta is brutal for CLS and
+  irrelevant for LCP.
+
+### Fixed — Migration redirects plan (Migration Specialist review, 6.5→8.0)
+
+- **Collision detection**: when N old URLs map to the same target, the
+  output now reports them under `collisions[]` so the human can
+  disambiguate before deploy.
+- **Self-redirect detection**: where `from == to`, the entry goes to
+  `self_redirects[]` — these would loop in production.
+- **Exact-path lookup is now O(1) via dict index**, not O(N×M). The
+  module is now usable on 10k×10k URL migrations.
+
+### Fixed — Hreflang region-awareness
+
+- `hreflang_cluster_audit` no longer treats `es-ES` and `es-MX` as
+  interchangeable. When the user specifies a region tag, the matcher
+  requires an EXACT region match — the old `startswith(lang+"-")` accepted
+  any region and produced false-greens on multi-region clusters.
+
+### Fixed — `crossplatform/diagnosis.py` cannibalization data truncation
+
+- `query_search_analytics` for the cannibalization scan now uses
+  `row_limit=25000, fetch_all=True` (was 5000 single-page). Mid-traffic
+  sites hit the 5000 cap silently and produced false-negative
+  cannibalization reports.
+
+### Fixed — `landingPagePlusQueryString` UTM cardinality bomb
+
+- Switched all four cross-platform tools (`diagnosis`, `journey`, `matrix`,
+  `attribution`) from `landingPagePlusQueryString` to `landingPage` for
+  EXACT-match filters. Sites with paid traffic explode the former
+  dimension's cardinality (one page → 50+ entries) and EXACT match
+  silently misses real organic sessions.
+
+### Fixed — `cross_seo_to_revenue_attribution` honesty
+
+- Renamed the output key `attributed_revenue` → `revenue_share_estimate`
+  with `revenue_estimate_low` / `_high` (50 % band). Added a top-level
+  `caveat` explaining that share-based distribution assumes revenue
+  follows clicks, which is false in real e-commerce (transactional
+  queries convert 5–10× more on the same page). The old key remains as a
+  back-compat alias.
+
+### Fixed — `ga4_conversion_funnel` is now `event_volume_comparison`
+
+- The original docstring admitted the GA4 Data API doesn't enforce
+  sequence, but the output presented `drop_off_pct` as if it were a real
+  funnel. Renamed to `event_volume_comparison` with explicit warnings;
+  output keys are `series` and `last_to_first_user_ratio`. Pointers to
+  GA4 `runFunnelReport` (Data API v1alpha) for true sequencing. Old
+  `conversion_funnel` remains as a deprecated alias.
+
+### Fixed — Schema fetch UA
+
+- `schema/__init__.py:fetch_html` now uses a real Chrome 130 UA instead
+  of the custom `google-seo-mcp/x.y` string that Cloudflare / DataDome /
+  Akamai bot management would challenge or A/B-route.
+
 ## [0.4.0] — 2026-04-29
 
 ### Added — Migration module v2 (4 new tools, 69 → 73 total)

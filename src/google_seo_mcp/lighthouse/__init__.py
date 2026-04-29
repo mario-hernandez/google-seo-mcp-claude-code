@@ -52,3 +52,41 @@ def call_psi(
     if resp.status_code >= 400:
         raise RuntimeError(f"PSI API returned {resp.status_code}: {resp.text[:300]}")
     return resp.json()
+
+
+def extract_field_data(psi: dict[str, Any]) -> dict[str, Any]:
+    """Extract CrUX field data embedded in the PSI response.
+
+    PSI v5 includes ``loadingExperience`` (URL-level) and
+    ``originLoadingExperience`` (origin-level) — both are real-user p75
+    data. They cost nothing extra (already in the same response) and
+    convert a lab-only audit into a lab+field one.
+    """
+    out: dict[str, Any] = {"url_field": None, "origin_field": None}
+    le = psi.get("loadingExperience") or {}
+    if le.get("metrics"):
+        out["url_field"] = {
+            "id": le.get("id"),
+            "overall_category": le.get("overall_category"),
+            "metrics": {
+                k: {
+                    "percentile": v.get("percentile"),
+                    "category": v.get("category"),
+                }
+                for k, v in (le.get("metrics") or {}).items()
+            },
+        }
+    ole = psi.get("originLoadingExperience") or {}
+    if ole.get("metrics"):
+        out["origin_field"] = {
+            "id": ole.get("id"),
+            "overall_category": ole.get("overall_category"),
+            "metrics": {
+                k: {
+                    "percentile": v.get("percentile"),
+                    "category": v.get("category"),
+                }
+                for k, v in (ole.get("metrics") or {}).items()
+            },
+        }
+    return out

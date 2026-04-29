@@ -86,7 +86,9 @@ def seo_to_revenue_attribution(
             dimension_filter={
                 "and": [
                     {
-                        "field": "landingPagePlusQueryString",
+                        # `landingPage` (no query string) avoids UTM-driven
+                        # cardinality explosion in EXACT matches.
+                        "field": "landingPage",
                         "string_value": path,
                         "match": "EXACT",
                     },
@@ -112,19 +114,41 @@ def seo_to_revenue_attribution(
         page_total = page_clicks[pair["page"]]
         share = pair["gsc_clicks"] / page_total if page_total else 0
         ga = ga4_revenue.get(pair["page"], {"revenue": 0, "conversions": 0, "sessions": 0})
-        attributed_rev = ga["revenue"] * share
-        attributed_conv = ga["conversions"] * share
+        rev_estimate = ga["revenue"] * share
+        # 50% confidence band — wide on purpose: transactional queries
+        # convert 5-10x better than informational on the same landing,
+        # so the share-based estimate is a directional anchor at best.
+        rev_low = rev_estimate * 0.5
+        rev_high = rev_estimate * 1.5
+        conv_estimate = ga["conversions"] * share
         out.append({
             **pair,
             "click_share_on_page": round(share, 3),
-            "attributed_revenue": round(attributed_rev, 2),
-            "attributed_conversions": round(attributed_conv, 2),
+            "revenue_share_estimate": round(rev_estimate, 2),
+            "revenue_estimate_low": round(rev_low, 2),
+            "revenue_estimate_high": round(rev_high, 2),
+            "conversions_share_estimate": round(conv_estimate, 2),
             "ga4_page_total_revenue": ga["revenue"],
             "ga4_page_total_sessions": ga["sessions"],
+            # Back-compat for callers that already read the old key
+            "attributed_revenue": round(rev_estimate, 2),
+            "attributed_conversions": round(conv_estimate, 2),
         })
-    out.sort(key=lambda x: x["attributed_revenue"], reverse=True)
+    out.sort(key=lambda x: x["revenue_share_estimate"], reverse=True)
     return with_meta(
-        out[:top_n],
+        {
+            "ranked_estimates": out[:top_n],
+            "model": "click_share_proportional",
+            "caveat": (
+                "These are SHARE estimates, not measured attribution. We "
+                "distribute landing-page revenue by GSC click-share, but "
+                "transactional queries convert 5-10x better than "
+                "informational ones on the same page — so the estimate is "
+                "directional. revenue_estimate_low/high give a 50% band. "
+                "For real attribution use GA4 BigQuery export with a "
+                "Markov/Shapley model."
+            ),
+        },
         source="crossplatform.seo_to_revenue_attribution",
         site_url=site_url,
         property=pid,
@@ -133,7 +157,7 @@ def seo_to_revenue_attribution(
             "ga4": {"start": ga_start, "end": ga_end},
         },
         extra={
-            "attribution_model": "click_share_proportional",
+            "attribution_model": "click_share_proportional_estimate",
             "pages_dropped_due_to_filter_cap": dropped_pages,
         },
     )

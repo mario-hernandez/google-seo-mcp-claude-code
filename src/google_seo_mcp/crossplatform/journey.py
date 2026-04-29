@@ -85,7 +85,9 @@ def gsc_to_ga4_journey(
     ga_start, ga_end = ga_period(days)
     organic_filter = {
         "and": [
-            {"field": "landingPagePlusQueryString", "string_value": path, "match": "EXACT"},
+            # `landingPage` (no query string) avoids UTM-driven cardinality
+            # explosion that broke EXACT match on paid-traffic sites.
+            {"field": "landingPage", "string_value": path, "match": "EXACT"},
             {"field": "sessionDefaultChannelGroup", "string_value": "Organic Search"},
         ]
     }

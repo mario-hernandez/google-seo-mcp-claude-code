@@ -91,6 +91,7 @@ _register(ga4_intel.anomalies, name="ga4_anomalies")
 _register(ga4_intel.traffic_drops_by_channel, name="ga4_traffic_drops_by_channel")
 _register(ga4_intel.landing_page_health, name="ga4_landing_page_health")
 _register(ga4_intel.conversion_funnel, name="ga4_conversion_funnel")
+_register(ga4_intel.event_volume_comparison, name="ga4_event_volume_comparison")
 _register(ga4_intel.cohort_retention, name="ga4_cohort_retention")
 _register(ga4_intel.channel_attribution, name="ga4_channel_attribution")
 _register(ga4_intel.content_decay, name="ga4_content_decay")
@@ -226,7 +227,8 @@ def get_capabilities() -> dict:
             ],
             "ga4_intelligence": [
                 "ga4_anomalies", "ga4_traffic_drops_by_channel",
-                "ga4_landing_page_health", "ga4_conversion_funnel",
+                "ga4_landing_page_health", "ga4_event_volume_comparison",
+                "ga4_conversion_funnel",  # deprecated alias of event_volume_comparison
                 "ga4_cohort_retention", "ga4_channel_attribution",
                 "ga4_content_decay",
             ],

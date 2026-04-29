@@ -271,19 +271,26 @@ def landing_page_health(
     )
 
 
-def conversion_funnel(
+def event_volume_comparison(
     property_id: int | str,
     steps: list[str],
     days: int = 28,
 ) -> dict:
-    """Real conversion funnel via sequential event filters.
+    """Per-event unique-user counts (NOT a real funnel).
 
-    For each step, counts unique users who fired that event (and all prior steps)
-    in the last `days`. Drop-off = users at step N / users at step N-1.
+    HONEST CAVEAT: this is NOT a sequential funnel. The GA4 Data API does
+    not enforce sequence in standard reports — each step counts the unique
+    users who fired that event INDEPENDENTLY in the window. The drop_off
+    field below compares cohorts that are not actually nested, so a "100%
+    drop" between view_item and add_to_cart can hide the truth (some users
+    buy without viewing).
+
+    For true sequenced funnels, use GA4 ``runFunnelReport`` (Data API
+    v1alpha) or the Funnel Exploration in the GA4 UI.
 
     Args:
-        steps: ordered list of event names (e.g. ["page_view", "view_item",
-               "add_to_cart", "begin_checkout", "purchase"]).
+        steps: ordered list of event names. The order is reflected in the
+               output but does NOT enforce a temporal sequence in the query.
     """
     pid = normalize_property(property_id)
     start, end = period(days)
@@ -291,15 +298,12 @@ def conversion_funnel(
         raise ValueError("steps must be a non-empty list of event names")
     if len(steps) > 10:
         raise ValueError(
-            f"conversion_funnel supports at most 10 steps to protect quota; got {len(steps)}"
+            f"event_volume_comparison supports at most 10 steps to protect quota; got {len(steps)}"
         )
 
-    funnel = []
+    series = []
     prev_users: float | None = None
     for i, event in enumerate(steps):
-        # Users who fired all prior events AND this one (approximation: filter by event)
-        # GA4 Data API doesn't enforce sequence in standard reports — for true sequencing
-        # use Funnel Exploration in GA4 UI. This gives unique users firing each step.
         rows = run_report(
             pid,
             start_date=start,
@@ -310,31 +314,51 @@ def conversion_funnel(
             aggregations=["TOTAL"],
         )["rows"]
         users = float(rows[0]["totalUsers"]) if rows else 0
-        drop_pct: float | None = None
+        cohort_delta_pct: float | None = None
         if prev_users is not None and prev_users > 0:
-            drop_pct = round((1 - users / prev_users) * 100, 1)
-        elif prev_users == 0:
-            drop_pct = 100.0  # Trivial 100% drop from zero — natural interpretation
-        funnel.append({
+            cohort_delta_pct = round((1 - users / prev_users) * 100, 1)
+        series.append({
             "step": i + 1,
             "event": event,
             "users": users,
-            "drop_off_pct_from_prior": drop_pct,
-            "drop_off_severity": (
-                "critical" if drop_pct and drop_pct > 70
-                else "warning" if drop_pct and drop_pct > 40
-                else "ok"
-            ) if drop_pct is not None else None,
+            "cohort_delta_pct_from_prior": cohort_delta_pct,
+            "warning": (
+                "Cohorts are not nested — this delta is descriptive, not a true drop-off"
+                if cohort_delta_pct is not None else None
+            ),
         })
         prev_users = users
-    overall_cvr = funnel[-1]["users"] / funnel[0]["users"] if funnel[0]["users"] else 0
+    last_first_ratio = series[-1]["users"] / series[0]["users"] if series[0]["users"] else 0
     return with_meta(
-        {"funnel": funnel, "overall_conversion_rate": overall_cvr},
-        source="intelligence.conversion_funnel",
+        {
+            "series": series,
+            "last_to_first_user_ratio": last_first_ratio,
+            "is_sequenced_funnel": False,
+            "for_real_funnel_use": (
+                "GA4 runFunnelReport (Data API v1alpha) or Funnel Exploration in the GA4 UI"
+            ),
+        },
+        source="intelligence.event_volume_comparison",
         property=pid,
         period={"start": start, "end": end},
         extra={"steps": steps},
     )
+
+
+# Back-compat alias (deprecated). Logs the old name in the source meta so
+# existing dashboards keep working while consumers migrate. Same return
+# shape — keys series/last_to_first_user_ratio replace funnel/conversion_rate.
+def conversion_funnel(
+    property_id: int | str,
+    steps: list[str],
+    days: int = 28,
+) -> dict:
+    """DEPRECATED alias for event_volume_comparison. The original name was
+    misleading — GA4 Data API does not enforce sequence, so this is not a
+    real funnel. Use event_volume_comparison for new code or GA4
+    runFunnelReport for true sequencing.
+    """
+    return event_volume_comparison(property_id, steps, days=days)
 
 
 def cohort_retention(

@@ -4,11 +4,20 @@ from __future__ import annotations
 from typing import Any
 
 from ..guardrails import with_meta
-from . import call_psi
+from . import call_psi, extract_field_data
 
 
 def _audit_summary(psi: dict[str, Any]) -> dict[str, Any]:
-    """Extract the high-signal numbers from a PSI response."""
+    """Extract the high-signal numbers from a PSI response.
+
+    Reports CrUX field data (real users, p75) alongside the lab metrics —
+    PSI embeds it for free in `loadingExperience` / `originLoadingExperience`
+    and ignoring it gives lab-only audits, which mislead decision making.
+
+    Only LCP/INP/CLS are reported as Core Web Vitals (the official set since
+    March 2024 when INP replaced FID). TBT/FCP/SI/TTI are surfaced under
+    `lab_metrics` instead — they are diagnostic, not ranking signals.
+    """
     lr = psi.get("lighthouseResult", {})
     cats = lr.get("categories", {})
     audits = lr.get("audits", {})
@@ -34,10 +43,16 @@ def _audit_summary(psi: dict[str, Any]) -> dict[str, Any]:
             "best_practices": _score("best-practices"),
             "seo": _score("seo"),
         },
-        "core_web_vitals": {
+        "core_web_vitals_lab": {
+            # LCP/CLS are CWV. INP comes from field only — Lighthouse cannot
+            # measure it directly. TBT is its lab proxy and lives under
+            # lab_metrics, NOT here.
             "lcp": _audit_value("largest-contentful-paint"),
             "cls": _audit_value("cumulative-layout-shift"),
-            "tbt": _audit_value("total-blocking-time"),
+        },
+        "core_web_vitals_field": extract_field_data(psi),
+        "lab_metrics": {
+            "tbt_proxy_for_inp": _audit_value("total-blocking-time"),
             "fcp": _audit_value("first-contentful-paint"),
             "speed_index": _audit_value("speed-index"),
             "tti": _audit_value("interactive"),
@@ -79,28 +94,54 @@ def lighthouse_core_web_vitals(url: str, strategy: str = "mobile") -> dict:
 def lighthouse_lcp_opportunities(url: str, strategy: str = "mobile") -> dict:
     """List the audits that, if fixed, would improve LCP the most.
 
-    Returns the top "opportunities" (Lighthouse term for actionable improvements)
-    sorted by estimated savings in ms.
+    Filters to audits actually relevant to LCP (via Lighthouse's
+    ``auditRefs[*].relevantAudits``). Earlier versions returned every
+    opportunity which surfaced unused-css-rules / efficient-animated-content
+    even when LCP didn't depend on them.
     """
     psi = call_psi(url, strategy=strategy, categories=["performance"])
-    audits = psi.get("lighthouseResult", {}).get("audits", {})
+    lr = psi.get("lighthouseResult", {})
+    audits = lr.get("audits", {})
+    perf_cat = lr.get("categories", {}).get("performance", {})
+    refs = perf_cat.get("auditRefs", [])
+
+    # The audit IDs that Lighthouse declares as relevant to LCP
+    lcp_relevant_ids: set[str] = set()
+    for ref in refs:
+        if ref.get("id") == "largest-contentful-paint":
+            continue
+        relevant = ref.get("relevantAudits") or []
+        if "largest-contentful-paint" in relevant:
+            lcp_relevant_ids.add(ref["id"])
+
     opportunities = []
+    other_perf_opps = []
     for aid, a in audits.items():
         if a.get("details", {}).get("type") != "opportunity":
             continue
         savings = a.get("details", {}).get("overallSavingsMs", 0)
         if savings <= 0:
             continue
-        opportunities.append({
+        item = {
             "id": aid,
             "title": a.get("title"),
             "description": a.get("description"),
             "estimated_savings_ms": savings,
             "score": a.get("score"),
-        })
+            "lcp_relevant": aid in lcp_relevant_ids,
+        }
+        if aid in lcp_relevant_ids:
+            opportunities.append(item)
+        else:
+            other_perf_opps.append(item)
+
     opportunities.sort(key=lambda x: x["estimated_savings_ms"], reverse=True)
+    other_perf_opps.sort(key=lambda x: x["estimated_savings_ms"], reverse=True)
     return with_meta(
-        opportunities,
+        {
+            "lcp_relevant_opportunities": opportunities,
+            "other_performance_opportunities": other_perf_opps,
+        },
         source=f"pagespeed_insights_v5.opportunities.{strategy}",
         site_url=url,
     )

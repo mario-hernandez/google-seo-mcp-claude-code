@@ -99,7 +99,9 @@ def opportunity_matrix(
             dimension_filter={
                 "and": [
                     {
-                        "field": "landingPagePlusQueryString",
+                        # `landingPage` skips query string — UTM/gclid would
+                        # break EXACT match on sites with paid traffic.
+                        "field": "landingPage",
                         "string_value": path,
                         "match": "EXACT",
                     },

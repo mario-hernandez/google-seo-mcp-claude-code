@@ -47,6 +47,7 @@ def crux_current(
     url_or_origin: str,
     form_factor: str = "PHONE",
     is_origin: bool = False,
+    auto_fallback_to_origin: bool = True,
 ) -> dict:
     """Latest 28-day CrUX snapshot for a URL or origin (real user data).
 
@@ -57,17 +58,49 @@ def crux_current(
             primarily for ranking.
         is_origin: True to query the origin (aggregated across all URLs);
             False (default) to query the specific URL.
+        auto_fallback_to_origin: when querying a URL and CrUX has no data,
+            automatically retry against the origin and tag the result.
     """
+    scope = "url" if not is_origin else "origin"
     payload = (
         query_record(origin=url_or_origin, form_factor=form_factor)
         if is_origin
         else query_record(url=url_or_origin, form_factor=form_factor)
     )
+
+    fallback_used = False
+    if (
+        payload.get("_no_data")
+        and auto_fallback_to_origin
+        and not is_origin
+    ):
+        # Derive origin from URL (scheme + host)
+        from urllib.parse import urlparse
+
+        p = urlparse(url_or_origin)
+        if p.scheme and p.netloc:
+            origin = f"{p.scheme}://{p.netloc}"
+            payload = query_record(origin=origin, form_factor=form_factor)
+            fallback_used = True
+            scope = "origin_fallback"
+
+    summary = _summarise_record(payload)
+    summary["scope"] = scope
+    if fallback_used:
+        summary["fallback_note"] = (
+            f"URL not in CrUX dataset; transparently retried against the "
+            f"origin. The metrics shown are origin-aggregated."
+        )
+
     return with_meta(
-        _summarise_record(payload),
+        summary,
         source="crux.queryRecord",
         site_url=url_or_origin,
-        extra={"form_factor": form_factor, "is_origin": is_origin},
+        extra={
+            "form_factor": form_factor,
+            "is_origin": is_origin,
+            "scope": scope,
+        },
     )
 
 
@@ -164,12 +197,35 @@ def crux_compare_origins(
 
     p75_a = _p75(a)
     p75_b = _p75(b)
+    delta = (
+        (p75_a - p75_b)
+        if (p75_a is not None and p75_b is not None)
+        else None
+    )
+
+    # For all CWV metrics LOWER is better. CLS is unitless, others are ms.
+    unit = "score" if metric == "cumulative_layout_shift" else "ms"
+    winner: str | None = None
+    if delta is not None:
+        if abs(delta) < (0.005 if unit == "score" else 50):
+            winner = "tie"
+        elif delta > 0:
+            winner = origin_b  # b is faster (lower p75)
+        else:
+            winner = origin_a
+
     return with_meta(
         {
             "origin_a": {"origin": origin_a, "p75": p75_a},
             "origin_b": {"origin": origin_b, "p75": p75_b},
-            "delta": (p75_a - p75_b) if (p75_a is not None and p75_b is not None) else None,
+            "delta": delta,
             "metric": metric,
+            "metric_unit": unit,
+            "winner": winner,
+            "interpretation": (
+                f"Lower p75 {unit} is better. delta = origin_a - origin_b."
+                if delta is not None else "No data for at least one origin."
+            ),
         },
         source="crux.compare",
     )

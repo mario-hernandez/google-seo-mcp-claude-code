@@ -24,13 +24,9 @@ def _slug(url: str) -> str:
     return path.replace("-", " ").replace("_", " ").replace("/", " ")
 
 
-def _exact_match(old: str, new_urls: list[str]) -> str | None:
-    """Same path on different host = exact match."""
-    old_path = urlparse(old).path.rstrip("/")
-    for n in new_urls:
-        if urlparse(n).path.rstrip("/") == old_path:
-            return n
-    return None
+def _path_key(url: str) -> str:
+    """Path-only, lowercase, no trailing slash — for O(1) exact lookup."""
+    return urlparse(url).path.rstrip("/").lower()
 
 
 def migration_redirects_plan(
@@ -41,11 +37,13 @@ def migration_redirects_plan(
     """Suggest 301 mappings from old_urls → new_urls based on URL similarity.
 
     Strategy (fastest first):
-      1. Exact path match (same slug, different host)
-      2. Token-set ratio on slug (catches reorderings, e.g. /blog/x vs /x/blog)
-      3. Below `min_score` → no_match (manual review)
+      1. Exact path match (same slug, different host) — O(1) via dict.
+      2. Token-set ratio on slug (catches reorderings, e.g. /blog/x vs /x/blog).
+      3. Below `min_score` → no_match (manual review).
 
-    Returns the plan + lists of unmatched old URLs for manual decision.
+    Detects collisions (multiple ``old`` URLs landing on the same ``to``)
+    and self-redirects (where ``from == to``) — both are SEO traps that
+    earlier versions silently allowed.
 
     Args:
         min_score: 0-100 fuzz match threshold below which we call no-match.
@@ -55,32 +53,48 @@ def migration_redirects_plan(
             "plan": [],
             "unmatched_old": old_urls,
             "unused_new": new_urls,
-            "stats": {"total_old": len(old_urls), "matched": 0, "exact": 0, "fuzzy": 0, "unmatched": len(old_urls)},
+            "collisions": [],
+            "self_redirects": [],
+            "stats": {
+                "total_old": len(old_urls), "matched": 0, "exact": 0,
+                "fuzzy": 0, "unmatched": len(old_urls),
+                "collisions": 0, "self_redirects": 0,
+            },
         }
 
-    # Pre-compute slugs for new URLs
+    # Pre-compute slugs and exact-path index for new URLs (O(N) build, O(1) lookup)
     new_slugs = [_slug(n) for n in new_urls]
-    slug_to_url = {s: u for s, u in zip(new_slugs, new_urls)}
+    slug_to_url = {s: u for s, u in zip(new_slugs, new_urls) if s}
+    exact_path_index: dict[str, str] = {}
+    for n in new_urls:
+        exact_path_index.setdefault(_path_key(n), n)
 
     plan: list[dict] = []
     unmatched: list[str] = []
-    used_new: set[str] = set()
+    target_to_sources: dict[str, list[str]] = {}
+    self_redirects: list[dict] = []
 
     exact = 0
     fuzzy = 0
 
     for old in old_urls:
-        # 1. Exact path match
-        em = _exact_match(old, new_urls)
+        # 1. Exact path match — O(1)
+        old_pk = _path_key(old)
+        em = exact_path_index.get(old_pk)
         if em is not None:
-            plan.append({
+            entry = {
                 "from": old,
                 "to": em,
                 "match_type": "exact_path",
                 "score": 100.0,
-            })
-            used_new.add(em)
-            exact += 1
+            }
+            if old == em:
+                # Same URL on both sides — self-redirect would loop.
+                self_redirects.append(entry)
+            else:
+                plan.append(entry)
+                target_to_sources.setdefault(em, []).append(old)
+                exact += 1
             continue
 
         # 2. Fuzzy slug match
@@ -99,16 +113,31 @@ def migration_redirects_plan(
             continue
         matched_slug, score, idx = match
         target = slug_to_url.get(matched_slug, new_urls[idx])
+        if old == target:
+            self_redirects.append({
+                "from": old, "to": target,
+                "match_type": "fuzzy_slug", "score": round(score, 1),
+            })
+            continue
         plan.append({
             "from": old,
             "to": target,
             "match_type": "fuzzy_slug",
             "score": round(score, 1),
         })
-        used_new.add(target)
+        target_to_sources.setdefault(target, []).append(old)
         fuzzy += 1
 
+    # Detect collisions: multiple sources → same target
+    collisions = [
+        {"target": t, "sources": srcs, "source_count": len(srcs)}
+        for t, srcs in target_to_sources.items()
+        if len(srcs) > 1
+    ]
+    collisions.sort(key=lambda c: c["source_count"], reverse=True)
+
     plan.sort(key=lambda x: x["score"], reverse=True)
+    used_new = set(target_to_sources.keys())
     unused_new = [n for n in new_urls if n not in used_new]
 
     return {
@@ -117,6 +146,8 @@ def migration_redirects_plan(
         "unmatched_old_count": len(unmatched),
         "unused_new": unused_new,
         "unused_new_count": len(unused_new),
+        "collisions": collisions,
+        "self_redirects": self_redirects,
         "stats": {
             "total_old": len(old_urls),
             "total_new": len(new_urls),
@@ -124,6 +155,8 @@ def migration_redirects_plan(
             "exact": exact,
             "fuzzy": fuzzy,
             "unmatched": len(unmatched),
+            "collisions": len(collisions),
+            "self_redirects": len(self_redirects),
             "match_rate_pct": round(len(plan) / max(len(old_urls), 1) * 100, 1),
         },
     }

@@ -31,10 +31,34 @@ from typing import Any
 
 from .prerender import _extract_signals, fetch_as_with_meta
 
+# Mobile-first index has been the default since 2020. The bot UA we test
+# against MUST be the smartphone variant — testing the desktop variant
+# means testing the non-indexed copy. (Forensics review, P1.)
+# Chrome major version is bumped periodically; W.X.Y.Z literal would be
+# blocklisted by Cloudflare bot management as a spoof signature.
 GOOGLEBOT_UA = (
+    "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.116 Mobile Safari/537.36 "
+    "(compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+)
+GOOGLEBOT_DESKTOP_UA = (
     "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; "
     "Googlebot/2.1; +http://www.google.com/bot.html) "
-    "Chrome/W.X.Y.Z Safari/537.36"
+    "Chrome/130.0.6723.116 Safari/537.36"
+)
+GOOGLEBOT_IMAGE_UA = (
+    "Googlebot-Image/1.0"
+)
+GOOGLEBOT_NEWS_UA = (
+    "Mozilla/5.0 (compatible; Googlebot-News; +http://www.google.com/bot.html)"
+)
+ADSBOT_UA = (
+    "AdsBot-Google (+http://www.google.com/adsbot.html)"
+)
+ADSBOT_MOBILE_UA = (
+    "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.116 Mobile Safari/537.36 "
+    "(compatible; AdsBot-Google-Mobile; +http://www.google.com/mobile/adsbot.html)"
 )
 USER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -84,7 +108,13 @@ def verify_googlebot_ip(ip: str) -> dict[str, Any]:
 
 
 def _meta_signature(sig: dict[str, Any]) -> tuple:
-    """Stable hashable signature for cache-divergence detection."""
+    """Stable hashable signature for cache-divergence detection.
+
+    Includes meta_robots and the OG dict — high-value cloaking vectors
+    (e.g. ``noindex`` injected only for users) that earlier versions missed.
+    """
+    og = sig.get("og") or {}
+    og_frozen = tuple(sorted((og.items() if isinstance(og, dict) else [])))
     return (
         sig.get("title"),
         sig.get("meta_description"),
@@ -92,6 +122,8 @@ def _meta_signature(sig: dict[str, Any]) -> tuple:
         sig.get("jsonld_blocks"),
         sig.get("og_count"),
         sig.get("html_size_bytes"),
+        sig.get("meta_robots"),
+        og_frozen,
     )
 
 

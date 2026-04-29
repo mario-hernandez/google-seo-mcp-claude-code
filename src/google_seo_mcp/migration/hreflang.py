@@ -119,20 +119,50 @@ def hreflang_cluster_audit(
             tags = tags_per_url[url]
             declared = {t["hreflang"]: _normalize(t["href"]) for t in tags if t["href"]}
 
-            # Self-reference required by Google
-            if lang not in declared and not any(d.startswith(lang + "-") for d in declared):
-                row_issues.append(f"{url}: missing self-hreflang for lang={lang!r}")
+            lang_lower = lang.lower()
+            base_lang = lang_lower.split("-")[0]
+            has_region = "-" in lang_lower
 
-            # Each sibling must appear in this URL's tags
+            # Self-reference required by Google. If the user provided a
+            # region-tagged language (es-ES), require the EXACT region —
+            # es-ES is NOT satisfied by es-MX.
+            if has_region:
+                if lang_lower not in declared:
+                    row_issues.append(
+                        f"{url}: missing self-hreflang for exact lang+region={lang!r} "
+                        f"(generic {base_lang!r} is not enough — Google treats es-ES and es-MX as distinct clusters)"
+                    )
+            else:
+                # No region requested: accept exact base or any region variant
+                if lang_lower not in declared and not any(
+                    d.startswith(base_lang + "-") for d in declared
+                ):
+                    row_issues.append(f"{url}: missing self-hreflang for lang={lang!r}")
+
+            # Each sibling must appear in this URL's tags. Region-aware:
+            # exact match required when sibling specifies a region.
             for sib_lang, sib_url in siblings.items():
                 if sib_lang == lang:
                     continue
-                # Match exact lang or any lang-region variant
+                sib_lower = sib_lang.lower()
+                sib_has_region = "-" in sib_lower
+                sib_base = sib_lower.split("-")[0]
+
                 found = None
-                for k, v in declared.items():
-                    if k == sib_lang or k.startswith(sib_lang + "-"):
-                        found = v
-                        break
+                if sib_has_region:
+                    # EXACT match only — es-MX must not match es-ES
+                    if sib_lower in declared:
+                        found = declared[sib_lower]
+                else:
+                    # Generic sibling: accept any region variant of that base
+                    if sib_lower in declared:
+                        found = declared[sib_lower]
+                    else:
+                        for k, v in declared.items():
+                            if k.split("-")[0] == sib_base:
+                                found = v
+                                break
+
                 if found is None:
                     row_issues.append(
                         f"{url}: missing hreflang for sibling lang={sib_lang!r} (expected {sib_url!r})"

@@ -89,7 +89,10 @@ def landing_page_full_diagnosis(
             gsc_start,
             gsc_end,
             dimensions=["query", "page"],
-            row_limit=5000,
+            row_limit=25000,
+            fetch_all=True,  # Sites with mid+ traffic exceed 5000 (query, page)
+            # combinations easily; truncating produced false negatives in
+            # cannibalization detection.
         )
         by_query: dict[str, set[str]] = {}
         for r in qp_rows:
@@ -109,7 +112,10 @@ def landing_page_full_diagnosis(
     # ── GA4: behavior on this landing page (organic only) ──
     organic_filter = {
         "and": [
-            {"field": "landingPagePlusQueryString", "string_value": path, "match": "EXACT"},
+            # Use `landingPage` (no query string) — `landingPagePlusQueryString`
+            # explodes cardinality with UTM/gclid/fbclid params and EXACT match
+            # silently misses real traffic. (Tech SEO review.)
+            {"field": "landingPage", "string_value": path, "match": "EXACT"},
             {"field": "sessionDefaultChannelGroup", "string_value": "Organic Search"},
         ]
     }
