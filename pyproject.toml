@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-seo-mcp"
-version = "0.6.0"
+version = "0.7.0"
 description = "The complete Google SEO MCP for Claude Code & Cursor — Search Console + Analytics 4 + cross-platform intelligence (GSC↔GA4 journey, opportunity matrix, revenue attribution, traffic health check). Diagnostic SEO logic, anti-hallucination provenance, read-only by default."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,6 +46,12 @@ dependencies = [
 [project.optional-dependencies]
 ssr = [
     "playwright>=1.40.0",
+]
+# Required for STL deseasonalisation + BH-FDR multiple-testing correction
+# in ga4_anomalies. Falls back gracefully if absent (legacy Z-score path).
+stats = [
+    "statsmodels>=0.14",
+    "scipy>=1.11",
 ]
 dev = [
     "pytest>=8.0.0",

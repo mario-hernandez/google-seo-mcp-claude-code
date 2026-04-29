@@ -10,11 +10,21 @@ from typing import Any
 import httpx
 
 COMMON_TYPES = {
+    # Core
     "Article", "BlogPosting", "NewsArticle", "WebPage", "WebSite",
     "Organization", "LocalBusiness", "Person", "Product", "Offer",
-    "Event", "Course", "Recipe", "VideoObject", "FAQPage", "HowTo",
-    "Question", "Answer", "BreadcrumbList", "ItemList", "Review",
-    "AggregateRating", "MedicalEntity", "MedicalTherapy", "MedicalCondition",
+    "Event", "Course", "Recipe", "VideoObject", "FAQPage", "QAPage",
+    "HowTo", "Question", "Answer", "BreadcrumbList", "ItemList",
+    "Review", "AggregateRating",
+    # AEO / Knowledge Graph signals (added in v0.7 for entity-driven SEO)
+    "ClaimReview", "DefinedTerm", "DefinedTermSet", "Dataset",
+    "SoftwareApplication", "JobPosting", "Vehicle", "GovernmentService",
+    "Speakable", "Quotation",
+    # Medical (YMYL — critical for health verticals like example.com)
+    "MedicalEntity", "MedicalTherapy", "MedicalCondition", "MedicalWebPage",
+    "MedicalScholarlyArticle", "MedicalGuideline", "MedicalProcedure",
+    "Drug", "Specialty", "AnatomicalStructure",
+    # Services
     "Service", "ProfessionalService", "EducationalOrganization",
 }
 

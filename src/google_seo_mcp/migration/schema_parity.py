@@ -14,19 +14,61 @@ import extruct
 import httpx
 
 CRITICAL_PROPS = {
-    "Article": ("headline", "datePublished", "author", "image"),
-    "BlogPosting": ("headline", "datePublished", "author", "image"),
-    "NewsArticle": ("headline", "datePublished", "author", "image"),
-    "Product": ("name", "image", "offers", "aggregateRating"),
-    "Recipe": ("name", "image", "recipeIngredient", "recipeInstructions"),
+    # Article-family — added publisher/dateModified/mainEntityOfPage
+    # which Google requires for Top Stories rich result and uses as
+    # freshness signal. See:
+    # https://developers.google.com/search/docs/appearance/structured-data/article
+    "Article": (
+        "headline", "datePublished", "dateModified", "author", "image",
+        "publisher", "mainEntityOfPage",
+    ),
+    "BlogPosting": (
+        "headline", "datePublished", "dateModified", "author", "image",
+        "publisher", "mainEntityOfPage",
+    ),
+    "NewsArticle": (
+        "headline", "datePublished", "dateModified", "author", "image",
+        "publisher", "mainEntityOfPage", "articleSection",
+    ),
+    # Product — offers + brand are rich-result-required since 2024
+    "Product": (
+        "name", "image", "offers", "brand", "aggregateRating", "review",
+    ),
+    # Recipe — totalTime/nutrition required for "Recipe with cook time"
+    # carrousel; recipeYield bumps confidence on the result type.
+    "Recipe": (
+        "name", "image", "recipeIngredient", "recipeInstructions",
+        "totalTime", "recipeYield", "nutrition",
+    ),
     "FAQPage": ("mainEntity",),
-    "HowTo": ("name", "step"),
+    "QAPage": ("mainEntity",),
+    "HowTo": ("name", "step", "totalTime", "supply", "tool"),
     "BreadcrumbList": ("itemListElement",),
-    "Organization": ("name", "logo", "url"),
-    "Person": ("name",),
-    "WebPage": ("name", "url"),
-    "Event": ("name", "startDate", "location"),
-    "VideoObject": ("name", "thumbnailUrl", "uploadDate"),
+    # Organization — sameAs is the #1 signal for Knowledge Graph
+    # consolidation (Wikidata/LinkedIn/Crunchbase). Without it Google
+    # cannot link the entity to the KG and the LLM cannot cite it.
+    "Organization": (
+        "name", "logo", "url", "sameAs", "address", "contactPoint",
+    ),
+    # Person — sameAs (Wikidata/LinkedIn/ORCID), jobTitle, worksFor and
+    # knowsAbout are the EEAT author-byline foundation.
+    "Person": (
+        "name", "sameAs", "jobTitle", "worksFor", "knowsAbout",
+    ),
+    "WebPage": ("name", "url", "isPartOf"),
+    "Event": ("name", "startDate", "location", "offers"),
+    "VideoObject": (
+        "name", "thumbnailUrl", "uploadDate", "duration", "contentUrl",
+    ),
+    # YMYL / medical — critical for health verticals
+    "MedicalWebPage": ("about", "lastReviewed", "reviewedBy", "specialty"),
+    "Drug": ("name", "activeIngredient", "dosageForm", "drugClass"),
+    "MedicalProcedure": ("name", "procedureType", "bodyLocation"),
+    # AEO-relevant
+    "ClaimReview": ("claimReviewed", "reviewRating", "url", "author"),
+    "DefinedTerm": ("name", "description", "inDefinedTermSet"),
+    "Dataset": ("name", "description", "license", "creator"),
+    "JobPosting": ("title", "description", "datePosted", "hiringOrganization", "jobLocation"),
 }
 
 

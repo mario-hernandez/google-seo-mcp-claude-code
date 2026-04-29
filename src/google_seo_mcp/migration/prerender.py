@@ -210,11 +210,39 @@ def prerender_signals(url: str) -> dict[str, Any]:
     as ``<untrusted-third-party-content>...</untrusted-third-party-content>``
     so an LLM consuming this output cannot be hijacked by prompt-injection
     payloads embedded in the page metadata.
+
+    Also detects the *shell-only soft-404* pattern (200 status with body
+    containing only a JS root mount + meta tags) — the failure mode of
+    Next.js / Nuxt / SvelteKit deployments that forget SSR.
     """
     from ..security import mark_third_party_strings
 
     html = fetch_as(url, USER_UA)
     sig = _extract_signals(html, url)
+
+    # Shell-only soft-404 detection: when the body is essentially just a
+    # JS root and the page reports rich meta, a naive parser could call
+    # this ``green``. Signal it as ``red`` so the agent doesn't ship.
+    body_text_chars = sig.get("visible_text_chars", 0)
+    body_text_to_html_ratio = (
+        body_text_chars / max(sig.get("html_size_bytes", 1), 1)
+    )
+    is_shell = (
+        body_text_chars < 200
+        and body_text_to_html_ratio < 0.05
+        and any(
+            f'id="{root}"' in html or f"id='{root}'" in html
+            for root in ("__next", "root", "app", "svelte", "__nuxt")
+        )
+    )
+    if is_shell:
+        sig.setdefault("issues", []).append("shell_only_soft_404")
+        sig["health"] = "red"
+        sig["soft_404_pattern"] = (
+            "Body is a JS root mount (#__next/#root/#app/#svelte) with "
+            "<200 chars of visible text. Page returns 200 but is a soft 404 "
+            "for non-JS crawlers — fix SSR before relaunch."
+        )
     sig = mark_third_party_strings(sig)
 
     issues: list[str] = []
@@ -245,13 +273,29 @@ def prerender_signals(url: str) -> dict[str, Any]:
     return sig
 
 
-def prerender_vs_hydrated(url: str, wait_ms: int = 2000) -> dict[str, Any]:
+def prerender_vs_hydrated(
+    url: str,
+    wait_ms: int = 2000,
+    wrs_realistic: bool = False,
+) -> dict[str, Any]:
     """Compare pre-rendered HTML (no JS) vs DOM after JS hydration.
 
     Detects:
       - Content visible to user but missing in pre-render → bad SSR
       - JS-injected meta/schema → Googlebot may not see them
       - Heavy hydration changes → fragile SSR
+      - **Hydration mismatch warnings** (React #418/#423/#425) — invisible
+        to HTML diffs but kill SEO when they break the hydrated tree
+      - **Page errors / failed requests** during hydration
+
+    Args:
+        wait_ms: extra delay after the wait condition (default 2000ms).
+        wrs_realistic: when True, model Googlebot's Web Rendering Service
+            faithfully — ``domcontentloaded`` instead of ``networkidle``,
+            5-second budget, headless Chromium. The default ``False``
+            keeps the lenient developer-friendly behaviour for backward
+            compatibility, but ``wrs_realistic=True`` is what you should
+            ship to QA for migration sign-off.
 
     Requires Playwright (lazy import). If not installed:
         pip install playwright && playwright install chromium
@@ -267,18 +311,55 @@ def prerender_vs_hydrated(url: str, wait_ms: int = 2000) -> dict[str, Any]:
     pre_html = fetch_as(url, USER_UA)
     pre_sig = _extract_signals(pre_html, url)
 
+    console_messages: list[dict[str, str]] = []
+    page_errors: list[str] = []
+    failed_requests: list[dict[str, str]] = []
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
             page = browser.new_page(user_agent=USER_UA)
-            page.goto(url, wait_until="networkidle", timeout=45000)
-            if wait_ms:
-                page.wait_for_timeout(wait_ms)
+            page.on(
+                "console",
+                lambda msg: console_messages.append(
+                    {"type": msg.type, "text": msg.text[:300]}
+                ),
+            )
+            page.on("pageerror", lambda exc: page_errors.append(str(exc)[:400]))
+            page.on(
+                "requestfailed",
+                lambda req: failed_requests.append({
+                    "url": req.url[:200],
+                    "method": req.method,
+                    "failure": (req.failure or "")[:120],
+                }),
+            )
+            if wrs_realistic:
+                # Match Googlebot WRS budget — domcontentloaded + 5 s hard cap.
+                page.goto(url, wait_until="domcontentloaded", timeout=10_000)
+                page.wait_for_timeout(min(wait_ms, 5_000))
+            else:
+                page.goto(url, wait_until="networkidle", timeout=45_000)
+                if wait_ms:
+                    page.wait_for_timeout(wait_ms)
             hydrated_html = page.content()
         finally:
             browser.close()
 
     post_sig = _extract_signals(hydrated_html, url)
+
+    # Look for the React hydration mismatch family in console output.
+    hydration_warnings = [
+        m for m in console_messages
+        if any(
+            tok in (m.get("text") or "")
+            for tok in (
+                "Hydration", "hydration",
+                "did not match", "Minified React error #418",
+                "Minified React error #423", "Minified React error #425",
+            )
+        )
+    ]
 
     diffs: dict[str, Any] = {}
     for k in (
@@ -300,6 +381,10 @@ def prerender_vs_hydrated(url: str, wait_ms: int = 2000) -> dict[str, Any]:
         issues.append("title_only_set_after_js")
     if not pre_sig["meta_description"] and post_sig["meta_description"]:
         issues.append("description_only_set_after_js")
+    if hydration_warnings:
+        issues.append("react_hydration_mismatch")
+    if page_errors:
+        issues.append("javascript_errors_during_hydration")
 
     return {
         "url": url,
@@ -309,4 +394,9 @@ def prerender_vs_hydrated(url: str, wait_ms: int = 2000) -> dict[str, Any]:
         "visible_text_delta_pct": round(text_delta_pct, 1),
         "issues": issues,
         "verdict": "ok" if not issues else "ssr_problem",
+        "wrs_realistic_mode": wrs_realistic,
+        "hydration_warnings": hydration_warnings[:20],
+        "page_errors": page_errors[:20],
+        "failed_requests": failed_requests[:20],
+        "console_message_count": len(console_messages),
     }

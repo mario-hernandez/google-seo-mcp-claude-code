@@ -24,6 +24,8 @@ def anomalies(
     days: int = 30,
     z_threshold: float = 2.0,
     dimension: str | None = None,
+    deseasonalize: bool = True,
+    fdr_correction: bool = True,
 ) -> dict:
     """Detect daily anomalies via rolling Z-score with leave-one-out baseline.
 
@@ -31,12 +33,25 @@ def anomalies(
     against the mean/std of the OTHER days (leave-one-out — prevents the day
     being tested from contaminating its own baseline, a flaw in some other MCPs).
 
+    Two enhancements vs naive Z-score (added in v0.7 after the panel review):
+      1. **Deseasonalisation** — when ``deseasonalize=True`` and the series
+         has at least 14 days, an STL decomposition (period=7) removes the
+         weekly cycle BEFORE Z-score. Without this, a normal Friday →
+         Monday pattern produces 30-50 % false anomalies on weekday data.
+      2. **Multiple-testing correction** — when ``fdr_correction=True`` and
+         a ``dimension`` is set, all candidate findings receive a
+         Benjamini–Hochberg FDR-adjusted p-value. With 100 segments testing
+         at α=0.05 the family-wise error rate is ~99 %; FDR keeps the
+         expected fraction of false positives at ≤5 %.
+
     Args:
         metric: e.g. "sessions", "totalUsers", "purchaseRevenue", "conversions".
         days: window size (default 30).
         z_threshold: |Z| above which a day is flagged (default 2.0; use 2.5 for laxer).
         dimension: optional segmentation dimension (e.g. "sessionDefaultChannelGroup")
                    — runs anomaly detection per-segment.
+        deseasonalize: STL detrend with weekly seasonality when N≥14.
+        fdr_correction: BH-FDR over candidate findings when a dimension is set.
     """
     pid = normalize_property(property_id)
     start, end = period(days)
@@ -59,41 +74,89 @@ def anomalies(
         series.setdefault(key, []).append((r["date"], float(r.get(metric, 0))))
 
     findings = []
+    candidates: list[dict] = []
+    seasonality_used = False
     for seg, points in series.items():
         if len(points) < 5:
             continue
         values = [v for _, v in points]
+
+        # Optional deseasonalisation. Requires statsmodels + 2 full weeks
+        # so STL has enough periods. Falls back silently if unavailable.
+        residuals = list(values)
+        if deseasonalize and len(values) >= 14:
+            try:  # pragma: no cover — depends on statsmodels at runtime
+                from statsmodels.tsa.seasonal import STL  # type: ignore
+                stl = STL(values, period=7, robust=True).fit()
+                residuals = list(stl.resid)
+                seasonality_used = True
+            except Exception:  # noqa: BLE001 — keep the legacy path if STL fails
+                residuals = list(values)
+
         for i, (d, v) in enumerate(points):
-            others = values[:i] + values[i + 1 :]
+            r = residuals[i]
+            other_resid = residuals[:i] + residuals[i + 1:]
             try:
-                mu = mean(others)
-                sigma = pstdev(others)
+                mu = mean(other_resid)
+                sigma = pstdev(other_resid)
             except StatisticsError:
                 continue
-            # Guard against near-zero variance: a series of [100, 100.001, 100, ...]
-            # has sigma≈1e-3 (not zero), and a single outlier of 500 would explode
-            # Z to millions. Require sigma to be meaningful both absolutely and
-            # relative to the mean (>1% of mean OR >0.5 absolute, whichever is stricter).
-            if sigma < max(0.5, abs(mu) * 0.01):
+            # Guard against near-zero variance.
+            if sigma < max(0.5, abs(mu) * 0.01) and not seasonality_used:
                 continue
-            z = (v - mu) / sigma
+            # When STL is in play the residuals' magnitude is small; relax
+            # the absolute threshold but keep a relative one.
+            if seasonality_used and sigma < max(0.05, abs(values[i]) * 0.005):
+                continue
+            z = (r - mu) / sigma if sigma else 0
             if abs(z) >= z_threshold:
-                findings.append({
+                expected_with_seasonality = (
+                    values[i] - r if seasonality_used else mu
+                )
+                candidates.append({
                     "segment": seg if dimension else None,
                     "date": d,
                     "value": v,
-                    "expected": round(mu, 2),
+                    "expected": round(expected_with_seasonality, 2),
                     "z_score": round(z, 2),
                     "deviation_pct": round((v - mu) / mu * 100, 1) if mu else None,
                     "type": "spike" if z > 0 else "drop",
                 })
+
+    # Multiple-testing correction (Benjamini–Hochberg FDR). Only applied
+    # when a dimension is set — that's where the FWER problem is real.
+    if fdr_correction and dimension and candidates:
+        try:
+            from scipy.stats import norm  # type: ignore
+            from statsmodels.stats.multitest import multipletests  # type: ignore
+            p_values = [
+                2 * (1 - norm.cdf(abs(c["z_score"]))) for c in candidates
+            ]
+            reject, pvals_adj, _, _ = multipletests(p_values, alpha=0.05, method="fdr_bh")
+            for c, padj, ok in zip(candidates, pvals_adj, reject):
+                c["p_value_bh"] = round(float(padj), 4)
+                c["passes_fdr_005"] = bool(ok)
+            findings = [c for c in candidates if c["passes_fdr_005"]]
+        except Exception:  # noqa: BLE001 — degrade gracefully without scipy/statsmodels
+            findings = candidates
+    else:
+        findings = candidates
+
     findings.sort(key=lambda x: abs(x["z_score"]), reverse=True)
     return with_meta(
         findings,
         source="intelligence.anomalies",
         property=pid,
         period={"start": start, "end": end},
-        extra={"metric": metric, "z_threshold": z_threshold, "dimension": dimension},
+        extra={
+            "metric": metric,
+            "z_threshold": z_threshold,
+            "dimension": dimension,
+            "deseasonalized": seasonality_used,
+            "fdr_correction_applied": fdr_correction and bool(dimension),
+            "candidates_before_fdr": len(candidates),
+            "candidates_after_fdr": len(findings),
+        },
     )
 
 

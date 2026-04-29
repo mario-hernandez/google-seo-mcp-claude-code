@@ -156,6 +156,73 @@ _register(migration_tools.schema_parity_check, name="migration_schema_parity_che
 _register(migration_tools.hreflang_cluster_audit, name="migration_hreflang_cluster_audit")
 _register(migration_tools.indexation_recovery_monitor, name="migration_indexation_recovery_monitor")
 
+# v0.7.0 — robots.txt audit + diff (Crawl Budget review)
+from .migration import robots_audit as _robots_audit  # noqa: E402
+
+def _robots_audit_tool(origin_url: str, sample_paths: list[str] | None = None) -> dict:
+    """Audit robots.txt: sitemaps declared, crawl-delay, disallows, sample-path verdicts."""
+    from .guardrails import with_meta
+    return with_meta(
+        _robots_audit.robots_audit(origin_url, sample_paths=sample_paths),
+        source="migration.robots_audit", site_url=origin_url,
+    )
+
+
+def _robots_diff_tool(
+    old_origin_url: str, new_origin_url: str,
+    paths_to_check: list[str], user_agent: str = "Googlebot",
+) -> dict:
+    """Diff old vs new robots.txt for a set of ranked paths.
+
+    Pass paths_to_check from `gsc_search_analytics(dimensions=['page'])` —
+    URLs that already drive clicks. Anything `newly_blocked` is critical:
+    you'll lose those clicks the day Google reads the new robots.txt.
+    """
+    from .guardrails import with_meta
+    return with_meta(
+        _robots_audit.robots_diff(
+            old_origin_url, new_origin_url, paths_to_check, user_agent=user_agent,
+        ),
+        source="migration.robots_diff",
+    )
+
+_register(_robots_audit_tool, name="migration_robots_audit")
+_register(_robots_diff_tool, name="migration_robots_diff")
+
+# v0.7.0 — AEO foundation (Answer Engine Optimization)
+from .aeo import llms_txt as _llms_txt_mod  # noqa: E402
+from .aeo import ai_bots_robots as _ai_bots_mod  # noqa: E402
+
+def _llms_txt_check(origin_url: str) -> dict:
+    """Verify ``/llms.txt`` and ``/llms-full.txt`` (LLM-discoverable index).
+
+    The llmstxt.org convention lets a site declare what an LLM should
+    ingest. Anthropic, Vercel, Cloudflare and most modern docs sites
+    publish it. Returns presence + parsed structure + lint warnings.
+    """
+    from .guardrails import with_meta
+    return with_meta(
+        _llms_txt_mod.llms_txt_check(origin_url),
+        source="aeo.llms_txt_check", site_url=origin_url,
+    )
+
+
+def _ai_bots_robots(origin_url: str, sample_path: str = "/") -> dict:
+    """Audit how every major AI/LLM crawler is treated by robots.txt.
+
+    Reports per-bot allow/block (GPTBot, ClaudeBot, PerplexityBot,
+    Google-Extended, CCBot, Bytespider, etc.) plus a vendor + purpose +
+    docs URL so the agent can flag accidental blocks or accidental allows.
+    """
+    from .guardrails import with_meta
+    return with_meta(
+        _ai_bots_mod.aibots_robots_audit(origin_url, sample_path=sample_path),
+        source="aeo.aibots_robots_audit", site_url=origin_url,
+    )
+
+_register(_llms_txt_check, name="aeo_llms_txt_check")
+_register(_ai_bots_robots, name="aeo_ai_bots_robots_audit")
+
 
 # ─── MCP Resource: Google algorithm updates reference ────────
 @mcp.resource("google-seo://algorithm-updates")

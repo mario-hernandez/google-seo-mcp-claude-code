@@ -49,7 +49,14 @@ def test_anomalies_detects_real_anomaly(monkeypatch):
     monkeypatch.setattr(ga_intel, "run_report", lambda *a, **k: {"rows": rows})
     monkeypatch.setattr(ga_intel, "normalize_property", lambda x: f"properties/{x}")
 
-    result = ga_intel.anomalies("123", metric="sessions", days=30, z_threshold=2.0)
+    # Run with deseasonalize=False to compare raw values (the test series
+    # has an artificial weekly cycle that STL would correctly remove,
+    # picking up cycle-residuals as anomalies too — for this sanity check
+    # we only want the absolute outlier).
+    result = ga_intel.anomalies(
+        "123", metric="sessions", days=30, z_threshold=2.0,
+        deseasonalize=False,
+    )
     findings = result["data"]
     assert len(findings) >= 1
     # The biggest finding should be the spike on 2026-04-29

@@ -7,7 +7,7 @@ from google_seo_mcp.server import mcp
 def test_tool_count():
     tools = list(mcp._tool_manager.list_tools())
     # 12 GSC + 13 GA4 + 6 cross + 5 LH + 3 CrUX + 3 Schema + 5 Idx + 5 Trends + 2 meta = 54
-    assert len(tools) == 74, f"Expected 74 tools, got {len(tools)}"
+    assert len(tools) == 78, f"Expected 78 tools, got {len(tools)}"
 
 
 def test_tool_names_have_expected_prefixes():
