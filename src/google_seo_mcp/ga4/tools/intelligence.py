@@ -71,7 +71,7 @@ def anomalies(
     series: dict[str, list[tuple[str, float]]] = {}
     for r in rows:
         key = r.get(dimension, "*") if dimension else "*"
-        series.setdefault(key, []).append((r["date"], float(r.get(metric, 0))))
+        series.setdefault(key, []).append((r["date"], float(r.get(metric) or 0)))
 
     findings = []
     candidates: list[dict] = []
@@ -285,13 +285,13 @@ def landing_page_health(
 
     out = []
     for r in rows:
-        sessions = float(r.get("sessions", 0))
+        sessions = float(r.get("sessions") or 0)
         if sessions < min_sessions:
             continue
-        bounce = float(r.get("bounceRate", 0))
-        engage = float(r.get("engagementRate", 0))
-        avg_dur = float(r.get("averageSessionDuration", 0))
-        conv = float(r.get("conversions", 0))
+        bounce = float(r.get("bounceRate") or 0)
+        engage = float(r.get("engagementRate") or 0)
+        avg_dur = float(r.get("averageSessionDuration") or 0)
+        conv = float(r.get("conversions") or 0)
         cvr = conv / sessions if sessions else 0
 
         score = 100
@@ -466,7 +466,7 @@ def channel_attribution(
     pid = normalize_property(property_id)
     start, end = period(days)
     last_touch = {
-        r["sessionDefaultChannelGroup"]: float(r.get(metric, 0))
+        r["sessionDefaultChannelGroup"]: float(r.get(metric) or 0)
         for r in run_report(
             pid,
             start_date=start,
@@ -477,7 +477,7 @@ def channel_attribution(
         )["rows"]
     }
     first_touch = {
-        r["firstUserDefaultChannelGroup"]: float(r.get(metric, 0))
+        r["firstUserDefaultChannelGroup"]: float(r.get(metric) or 0)
         for r in run_report(
             pid,
             start_date=start,
@@ -542,7 +542,7 @@ def content_decay(
 
     def fetch(s: date, e: date):
         return {
-            r["landingPagePlusQueryString"]: float(r.get(metric, 0))
+            r["landingPagePlusQueryString"]: float(r.get(metric) or 0)
             for r in run_report(
                 pid,
                 start_date=s.isoformat(),

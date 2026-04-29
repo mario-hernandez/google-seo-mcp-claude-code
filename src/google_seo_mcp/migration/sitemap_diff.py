@@ -1,6 +1,8 @@
 """Sitemap parsing + diff for migration planning."""
 from __future__ import annotations
 
+import time
+
 # defusedxml protects against billion-laughs / quadratic blowup / external
 # entity attacks when the LLM is asked (potentially via prompt injection)
 # to parse a hostile sitemap.
@@ -171,7 +173,6 @@ def sitemap_validate(sitemap_url: str, sample_size: int = 50, timeout: float = 1
                 return u, None, str(e)[:100]
         return u, None, "exhausted retries"
 
-    import time
     with httpx.Client(timeout=timeout, follow_redirects=False, headers={"User-Agent": UA}) as c:
         with ThreadPoolExecutor(max_workers=10) as pool:
             futures = [pool.submit(_check_one, c, u) for u in sample]

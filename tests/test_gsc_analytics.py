@@ -65,7 +65,22 @@ def test_expected_ctr_uses_floor():
 def test_ctr_benchmarks_env_override(monkeypatch):
     monkeypatch.setenv("GSC_CTR_BENCHMARKS", "0.5,0.3,0.2,0.1,0.05")
     out = ctr_benchmarks()
-    assert out == [0.5, 0.3, 0.2, 0.1, 0.05]
+    # First 5 come from env override, the rest pad from defaults so that
+    # ``expected_ctr(position)`` never IndexErrors on positions 6-10.
+    assert out[:5] == [0.5, 0.3, 0.2, 0.1, 0.05]
+    assert len(out) == len(DEFAULT_CTR_BENCHMARKS)
+    assert out[5:] == DEFAULT_CTR_BENCHMARKS[5:]
+
+
+def test_ctr_benchmarks_short_env_does_not_indexerror(monkeypatch):
+    """Regression: env override with <10 floats used to silently index out
+    of range when expected_ctr() was asked about positions 6-10."""
+    from google_seo_mcp.gsc.analytics import expected_ctr
+
+    monkeypatch.setenv("GSC_CTR_BENCHMARKS", "0.3,0.2,0.1")
+    # Position 7 used to crash with IndexError on parsed[6]; now pads.
+    val = expected_ctr(7)
+    assert isinstance(val, float)
 
 
 def test_ctr_benchmarks_invalid_env_falls_back(monkeypatch):

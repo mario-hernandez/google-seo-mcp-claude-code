@@ -4,6 +4,110 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] — 2026-04-30
+
+### Stability hardening — multi-client production readiness
+
+A 5-reviewer panel (Edge Cases QA, Exception Handling, Concurrency,
+Test Coverage, MCP Protocol Hygiene) audited v0.7.0 with one mandate:
+**no new features, only bugs and instabilities**. They returned ~80
+findings; the P0 / P1 ones (real crashes and silent-wrong-data risks)
+are fixed below. Tools registered: still 78. Tests: 74 → 92.
+
+### P0 — guaranteed crashes fixed
+
+- `lighthouse_core_web_vitals` raised ``KeyError`` on every call: it
+  asked for the key ``core_web_vitals`` after v0.5 renamed it to
+  ``core_web_vitals_lab``. Now returns lab + field + lab_metrics
+  together.
+- `migration/sitemap_diff.py` had ``time.sleep`` referenced before
+  ``import time`` (later in the same function) → ``NameError`` on the
+  first ``sitemap_validate`` call. Moved import to module top.
+- `migration/redirects_plan.py` unpacked ``rapidfuzz.process.extractOne``
+  output as ``(slug, score, idx)`` without guarding against the API
+  returning a different tuple length (rapidfuzz < 3) → ``ValueError``.
+
+### P0 — silent wrong data fixed
+
+- **Account rotation across clients no longer leaks data**. The auth
+  module hashes ``GOOGLE_APPLICATION_CREDENTIALS`` /
+  ``GOOGLE_SEO_SERVICE_ACCOUNT_FILE`` / ``GOOGLE_SEO_OAUTH_CLIENT_FILE``
+  paths, their mtimes, and the OAuth ``token.json`` mtime into a
+  fingerprint. When the operator runs a different ``gcloud auth
+  application-default login`` mid-session (Sofrocay → cliente B →
+  cliente C), the singletons are transparently invalidated. The
+  previous behaviour silently kept returning data from the previous
+  account.
+- ``float("")`` crash on empty GA4 metric values fixed in
+  ``crossplatform/health.py``, ``crossplatform/multi_property.py``,
+  and 9 places in ``ga4/tools/intelligence.py``.
+- ``KeyError`` on raw ``p["ctr"]`` / ``c["position"]`` subscripts in
+  ``gsc/tools/intelligence.py`` (lines 104, 327, 342). Some GSC rows
+  omit ``ctr``/``position`` even when filters pass; every accessor now
+  uses ``.get()`` with a 0 default.
+- ``ctr_benchmarks()`` env override with fewer than 10 floats now pads
+  with the defaults so ``expected_ctr(position)`` never IndexErrors
+  for positions 6–10.
+- ``equity_report`` URL normalisation: GSC normalises with trailing
+  slash, crawl/REST often omit it. The same logical URL was scored as
+  two duplicates and equity assigned to the wrong row. New ``_norm_url``
+  collapses host case + trailing slash + fragment.
+
+### P1 — concurrency & state correctness
+
+- Thread-safe singletons. ``auth.get_searchconsole/_webmasters/_data_client/_admin_client``
+  are now wrapped in a module-level ``threading.Lock`` with a double-
+  checked-locking pattern. FastMCP runs tool handlers concurrently;
+  without this, two parallel calls could each pass the ``is None``
+  check and run a fresh OAuth consent flow simultaneously.
+- ``reset_clients()`` also takes the lock so it cannot nuke a
+  half-built singleton in the middle of another thread's getter.
+- Atomic ``token.json`` write: a same-directory tempfile +
+  ``os.replace`` replaces ``token_path.write_text(...)``. Eliminates
+  the half-written-JSON failure mode after SIGINT or two concurrent
+  OAuth flows.
+- ``RefreshError`` from ``creds.refresh(Request())`` is now caught and
+  falls through to a fresh consent flow instead of escaping as a raw
+  traceback to the LLM.
+
+### P1 — MCP protocol hygiene
+
+- ``logging.basicConfig`` now explicitly uses ``stream=sys.stderr,
+  force=True``. Without ``force=True``, libraries imported earlier
+  could have already attached a handler to root and ``basicConfig``
+  silently no-op'd; without ``stream=sys.stderr`` any log line could
+  corrupt the JSON-RPC stdio channel.
+- advertools / Scrapy now run with ``LOG_ENABLED=False``,
+  ``LOG_STDOUT=False``, ``TELNETCONSOLE_ENABLED=False`` and an explicit
+  ``contextlib.redirect_stdout(io.StringIO())`` belt-and-braces around
+  ``adv.crawl``. Stops Scrapy's banner / stats prints from corrupting
+  the MCP transport.
+- ``with_meta`` now passes ``data``/``extra``/``period`` through a
+  ``_json_safe`` recursive coercer that handles ``datetime``, ``date``,
+  ``Decimal``, ``set``/``frozenset``, ``Path``, ``bytes``, numpy/pandas
+  scalars (``.item()``) and falls back to ``str(...)`` rather than
+  letting the JSON-RPC encoder explode.
+
+### P1 — Edge / Cloudflare hygiene
+
+- ``cloaking.googlebot_diff`` cache-converge default lowered from 30 s
+  to 5 s (still configurable via ``CLOAKING_CACHE_CONVERGE_S``). 30 s
+  blocked the FastMCP worker thread for half a minute on every
+  divergent fetch — a single cloaking audit could starve every other
+  tool call.
+
+### Tests added (regression coverage)
+
+- ``tests/test_stability_fixes.py`` (18 tests): ``_json_safe``
+  coercion against datetime / Decimal / set / Path / bytes / numpy /
+  weird types; ``with_meta`` payload pass-through; ``health.py`` and
+  ``multi_property.py`` ``float("")`` regression with mocked GA4
+  responses; auth atomic write success + temp cleanup on failure;
+  credentials fingerprint changes on env swap; equity URL
+  normalisation; rapidfuzz no-match graceful path.
+- ``test_ctr_benchmarks_short_env_does_not_indexerror`` regression
+  for the IndexError on padded benchmarks.
+
 ## [0.6.0] — 2026-04-29
 
 ### 11 fixes from a second senior SEO panel review

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 
 from mcp.server.fastmcp import FastMCP
 
@@ -36,9 +37,16 @@ from .trends import tools as trends_tools
 from .guardrails import GUARDRAIL_SUFFIX
 from .resources.google_algorithm_updates import algorithm_updates_text
 
+# MCP servers communicate JSON-RPC over stdout. ANY library log line that
+# slips to stdout corrupts the protocol and the agent stops receiving
+# tool results. We force every logger (ours and third-party) to stderr,
+# and use ``force=True`` in case a library imported earlier already
+# attached a handler to the root logger.
 logging.basicConfig(
     level=os.getenv("GOOGLE_SEO_LOG_LEVEL", "INFO"),
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    stream=sys.stderr,
+    force=True,
 )
 
 mcp = FastMCP("google-seo-mcp")

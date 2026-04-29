@@ -87,7 +87,12 @@ def lighthouse_core_web_vitals(url: str, strategy: str = "mobile") -> dict:
     accessibility/SEO/best-practices payload.
     """
     psi = call_psi(url, strategy=strategy, categories=["performance"])
-    cwv = _audit_summary(psi)["core_web_vitals"]
+    summary = _audit_summary(psi)
+    cwv = {
+        "core_web_vitals_lab": summary["core_web_vitals_lab"],
+        "core_web_vitals_field": summary["core_web_vitals_field"],
+        "lab_metrics": summary["lab_metrics"],
+    }
     return with_meta(cwv, source=f"pagespeed_insights_v5.cwv.{strategy}", site_url=url)
 
 

@@ -186,21 +186,33 @@ def crawl_site_advertools(start_url: str, max_pages: int = 200) -> list[dict]:
         mode="w", suffix=".jl", delete=False
     ).name
 
-    # advertools crawl is synchronous; respects robots.txt by default
+    # advertools wraps Scrapy. Scrapy's default Twisted reactor and
+    # banner can leak to stdout, which corrupts the MCP JSON-RPC channel.
+    # Silence it completely and additionally redirect any stray stdout
+    # from the spawned subprocess into the void.
     custom_settings = {
         "USER_AGENT": UA,
         "CLOSESPIDER_PAGECOUNT": max_pages,
         "LOG_LEVEL": "ERROR",
         "ROBOTSTXT_OBEY": True,
+        "LOG_ENABLED": False,        # nuclear silencing — no Scrapy log handler
+        "LOG_STDOUT": False,         # never redirect Python stdout into log
+        "TELNETCONSOLE_ENABLED": False,
     }
 
+    import contextlib
+    import io
+
     try:
-        adv.crawl(
-            url_list=[start_url],
-            output_file=out_path,
-            follow_links=True,
-            custom_settings=custom_settings,
-        )
+        # Belt-and-braces: capture any rogue print() from advertools/Scrapy
+        # to a discarded buffer rather than the MCP stdout.
+        with contextlib.redirect_stdout(io.StringIO()):
+            adv.crawl(
+                url_list=[start_url],
+                output_file=out_path,
+                follow_links=True,
+                custom_settings=custom_settings,
+            )
     except Exception as e:
         try:
             os.unlink(out_path)

@@ -111,7 +111,12 @@ def migration_redirects_plan(
         if match is None:
             unmatched.append(old)
             continue
-        matched_slug, score, idx = match
+        # rapidfuzz API: extractOne returns (choice, score, index) on
+        # match, None on no-match. Guard against API drift across versions.
+        if not isinstance(match, tuple) or len(match) < 3:
+            unmatched.append(old)
+            continue
+        matched_slug, score, idx = match[0], match[1], match[2]
         target = slug_to_url.get(matched_slug, new_urls[idx])
         if old == target:
             self_redirects.append({

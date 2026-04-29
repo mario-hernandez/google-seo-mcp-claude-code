@@ -101,7 +101,10 @@ def traffic_drops(
         delta_impr_pct = (
             (c.get("impressions", 0) - prev_impr) / prev_impr if prev_impr else 0.0
         )
-        ctr_ratio = (c.get("ctr", 0) / p["ctr"]) if p.get("ctr") else 1.0
+        # All accessors use `.get()` — some GSC responses omit `ctr`/`position`
+        # for low-volume rows even when filters pass.
+        p_ctr = p.get("ctr") or 0
+        ctr_ratio = (c.get("ctr", 0) / p_ctr) if p_ctr else 1.0
 
         if delta_pos > 2:
             cls = "ranking_loss"
@@ -320,8 +323,9 @@ def alerts(site_url: str, days: int = 7, severity_threshold: str = "warning") ->
                 "previous": p,
             })
             continue
-        # position drop
-        d_pos = c["position"] - p["position"]
+        # position drop — GSC may omit `position` for fresh-data rows with
+        # `dataState='all'`; treat missing as 0 so we never KeyError.
+        d_pos = (c.get("position") or 0) - (p.get("position") or 0)
         if d_pos > 5:
             push(entity, {
                 "type": "position_drop", "severity": "critical",
@@ -335,8 +339,10 @@ def alerts(site_url: str, days: int = 7, severity_threshold: str = "warning") ->
                 "delta_position": d_pos, "current": c, "previous": p,
             })
         # ctr collapse (position stable)
-        if abs(d_pos) <= 2 and p.get("ctr", 0) > 0:
-            ratio = c["ctr"] / p["ctr"]
+        p_ctr = p.get("ctr") or 0
+        c_ctr = c.get("ctr") or 0
+        if abs(d_pos) <= 2 and p_ctr > 0:
+            ratio = c_ctr / p_ctr
             if ratio < 0.5:
                 push(entity, {
                     "type": "ctr_collapse", "severity": "critical",

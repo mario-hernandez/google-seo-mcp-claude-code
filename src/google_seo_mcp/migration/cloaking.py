@@ -200,7 +200,11 @@ def googlebot_diff(url: str) -> dict[str, Any]:
     # by most caching layers and forces an origin hit on the second pass.
     cache_artifact = False
     if _meta_signature(bot_sig) != _meta_signature(user_sig):
-        wait_s = int(os.getenv("CLOAKING_CACHE_CONVERGE_S", "30"))
+        # Default 5s keeps the MCP responsive (a long sleep blocks the
+        # FastMCP worker thread). Operators auditing CF Tiered Cache can
+        # set ``CLOAKING_CACHE_CONVERGE_S=30`` (recommended for accurate
+        # convergence detection) but accept the latency.
+        wait_s = int(os.getenv("CLOAKING_CACHE_CONVERGE_S", "5"))
         time.sleep(wait_s)
         # Append cache-bust param so we deterministically pull from origin
         p = urlparse(url)

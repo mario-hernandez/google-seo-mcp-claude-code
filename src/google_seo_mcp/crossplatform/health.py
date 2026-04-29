@@ -61,7 +61,8 @@ def traffic_health_check(
         aggregations=["TOTAL"],
     )
     totals = ga_rows.get("totals") or []
-    ga_sessions = float(totals[0].get("sessions", 0)) if totals else 0
+    # GA4 returns "" for some empty metric values — float("") raises.
+    ga_sessions = float(totals[0].get("sessions") or 0) if totals else 0
 
     if gsc_clicks == 0 and ga_sessions == 0:
         diagnosis = "no_organic_traffic"

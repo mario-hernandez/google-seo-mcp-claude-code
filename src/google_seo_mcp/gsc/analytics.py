@@ -20,10 +20,15 @@ def ctr_benchmarks() -> list[float]:
     if not raw:
         return DEFAULT_CTR_BENCHMARKS
     try:
-        return [float(x.strip()) for x in raw.split(",")][:10]
+        parsed = [float(x.strip()) for x in raw.split(",")][:10]
     except ValueError:
         log.warning("Bad GSC_CTR_BENCHMARKS, using defaults")
         return DEFAULT_CTR_BENCHMARKS
+    # Pad with the defaults if the user provided fewer than 10 values, so
+    # downstream code can always index positions 1-10 without IndexError.
+    if len(parsed) < len(DEFAULT_CTR_BENCHMARKS):
+        parsed.extend(DEFAULT_CTR_BENCHMARKS[len(parsed):])
+    return parsed
 
 
 def expected_ctr(position: float) -> float:

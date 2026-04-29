@@ -53,16 +53,18 @@ def multi_property_comparison(
                 limit=200,
                 aggregations=["TOTAL"],
             )
+            # GA4 sometimes returns empty strings for missing metric values;
+            # ``float("")`` raises. ``or 0`` handles both None and "".
             totals = result.get("totals") or []
             if totals and metric in totals[0]:
-                total = float(totals[0][metric])
+                total = float(totals[0].get(metric) or 0)
             else:
-                total = sum(float(r.get(metric, 0)) for r in result["rows"])
+                total = sum(float(r.get(metric) or 0) for r in result["rows"])
             breakdown = None
             if dimension:
                 breakdown = sorted(
                     [
-                        {dimension: r.get(dimension, ""), metric: float(r.get(metric, 0))}
+                        {dimension: r.get(dimension, ""), metric: float(r.get(metric) or 0)}
                         for r in result["rows"]
                     ],
                     key=lambda x: x[metric],

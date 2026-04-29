@@ -57,8 +57,13 @@ def build_equity_report(
     except Exception as e:
         crawl_error = str(e)[:200]
 
-    # 3. Build crawled-rows lookup
-    crawl_by_url: dict[str, dict] = {row.get("url", ""): row for row in crawl_rows}
+    # 3. Build crawled-rows lookup. URLs are normalised (lowercase host,
+    # no trailing slash, no fragment) so REST + crawl + GSC entries that
+    # logically point to the same page collapse into a single record
+    # instead of being scored separately as duplicates.
+    crawl_by_url: dict[str, dict] = {
+        _norm_url(row.get("url", "")): row for row in crawl_rows if row.get("url")
+    }
 
     # 4. Internal links graph
     graph = internal_links_graph_from_crawl(crawl_rows) if crawl_rows else {
@@ -80,7 +85,7 @@ def build_equity_report(
             for r in rows:
                 page_url = (r.get("keys") or [None])[0]
                 if page_url:
-                    gsc_by_url[page_url] = {
+                    gsc_by_url[_norm_url(page_url)] = {
                         "clicks": r.get("clicks", 0),
                         "impressions": r.get("impressions", 0),
                         "ctr": r.get("ctr", 0),
@@ -96,7 +101,8 @@ def build_equity_report(
     max_in_deg = max(in_degree_by_url.values(), default=1) or 1
 
     per_url: list[dict] = []
-    all_urls = set(rest_urls_to_set(rest_urls)) | set(crawl_by_url.keys()) | set(gsc_by_url.keys())
+    rest_normed = {_norm_url(u) for u in rest_urls_to_set(rest_urls)}
+    all_urls = rest_normed | set(crawl_by_url.keys()) | set(gsc_by_url.keys())
     for url in all_urls:
         gsc = gsc_by_url.get(url, {"clicks": 0, "impressions": 0, "ctr": 0, "position": 0})
         crawled = crawl_by_url.get(url, {})
@@ -166,3 +172,26 @@ def build_equity_report(
 
 def rest_urls_to_set(rest_urls: list[dict]) -> list[str]:
     return [u["url"] for u in rest_urls if u.get("url")]
+
+
+def _norm_url(url: str) -> str:
+    """Canonicalise a URL for set operations.
+
+    Lowercases scheme + host, strips trailing slash from path (except for
+    the root), drops fragment. This makes ``https://X.com/post/`` and
+    ``https://x.com/post`` collapse into the same key — the equity report
+    used to count them as separate URLs and assign the SEO value to the
+    wrong one when GSC and the crawl disagreed on slash form.
+    """
+    if not url:
+        return ""
+    from urllib.parse import urlsplit, urlunsplit
+
+    s = urlsplit(url.strip())
+    scheme = (s.scheme or "https").lower()
+    host = (s.netloc or "").lower()
+    path = s.path or "/"
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+    # Drop fragment, keep query (semantically meaningful for some sites).
+    return urlunsplit((scheme, host, path, s.query, ""))
