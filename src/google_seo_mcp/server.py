@@ -150,6 +150,10 @@ _register(migration_tools.export_redirects_nginx, name="migration_export_redirec
 _register(migration_tools.export_redirects_apache, name="migration_export_redirects_apache")
 _register(migration_tools.export_redirects_cloudflare, name="migration_export_redirects_cloudflare")
 _register(migration_tools.seo_equity_report, name="migration_seo_equity_report")
+_register(migration_tools.wayback_baseline, name="migration_wayback_baseline")
+_register(migration_tools.schema_parity_check, name="migration_schema_parity_check")
+_register(migration_tools.hreflang_cluster_audit, name="migration_hreflang_cluster_audit")
+_register(migration_tools.indexation_recovery_monitor, name="migration_indexation_recovery_monitor")
 
 
 # ─── MCP Resource: Google algorithm updates reference ────────
@@ -268,6 +272,10 @@ def get_capabilities() -> dict:
                 "migration_export_redirects_apache",
                 "migration_export_redirects_cloudflare",
                 "migration_seo_equity_report",
+                "migration_wayback_baseline",
+                "migration_schema_parity_check",
+                "migration_hreflang_cluster_audit",
+                "migration_indexation_recovery_monitor",
             ],
             "meta": ["get_capabilities", "reauthenticate"],
             "resources": ["google-seo://algorithm-updates"],

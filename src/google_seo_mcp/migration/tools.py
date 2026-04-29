@@ -6,9 +6,13 @@ from typing import Any
 from ..guardrails import with_meta
 from . import cloaking as ck
 from . import equity_report as er
+from . import hreflang as hl
+from . import indexation as ix
 from . import prerender as pr
 from . import redirects_plan as rp
+from . import schema_parity as sp
 from . import sitemap_diff as sd
+from . import wayback as wb
 from . import wp_audit as wa
 
 
@@ -227,4 +231,82 @@ def seo_equity_report(
         er.build_equity_report(wp_url, gsc_site_url=gsc_site_url, days=days, max_pages=max_pages),
         source="migration.seo_equity_report",
         site_url=wp_url,
+    )
+
+
+# ─── v0.4.0 additions ─────────────────────────────────────────
+
+def wayback_baseline(
+    origin_url: str,
+    snapshot_date: str | None = None,
+    max_urls: int = 500,
+) -> dict:
+    """Anchor what the public archive saw BEFORE migration.
+
+    Step 1 of any migration workflow. Queries the Internet Archive's CDX API
+    (free, no key) and returns the inventory of HTML snapshots Google /
+    archivists captured for this origin. Use the returned ``anchor_url`` as
+    a public reference 6 months later if traffic drops are blamed on
+    something else.
+    """
+    return with_meta(
+        wb.wayback_baseline(origin_url, snapshot_date=snapshot_date, max_urls=max_urls),
+        source="migration.wayback_baseline",
+        site_url=origin_url,
+    )
+
+
+def schema_parity_check(old_url: str, new_url: str) -> dict:
+    """Compare JSON-LD schema between an old (WP) URL and new (SSR) URL.
+
+    Reports types missing on the new side, types added, and lost critical
+    properties (e.g. Article.headline, Product.offers). Returns a
+    ``parity_score`` 0..1 and a severity (ok / warning / critical). Catch
+    rich-result regressions BEFORE Google reindexes.
+    """
+    return with_meta(
+        sp.schema_parity_check(old_url, new_url),
+        source="migration.schema_parity_check",
+    )
+
+
+def hreflang_cluster_audit(
+    cluster: dict | None = None,
+    urls_es: list[str] | None = None,
+    urls_fr: list[str] | None = None,
+) -> dict:
+    """Verify hreflang reciprocity across a multi-language URL cluster.
+
+    Each URL in the cluster must self-reference, list all siblings with
+    correct hreflang, and agree on x-default. Works across domains too
+    (e.g. example.com ES ↔ example.org FR).
+
+    Pass ``cluster={"es-ES": [...], "fr-FR": [...]}`` (preferred), or use
+    the legacy ``urls_es=..., urls_fr=...`` shortcut.
+    """
+    return with_meta(
+        hl.hreflang_cluster_audit(cluster=cluster, urls_es=urls_es, urls_fr=urls_fr),
+        source="migration.hreflang_cluster_audit",
+    )
+
+
+def indexation_recovery_monitor(
+    site_url: str,
+    urls: list[str],
+    days_after_launch: int | None = None,
+    pause_ms: int = 100,
+) -> dict:
+    """Inspect post-migration URLs via GSC URL Inspection API.
+
+    Calls ``gsc_inspect_url`` per URL and aggregates results into categories
+    (INDEXED / DISCOVERED / SOFT_404 / BLOCKED / ERROR / UNKNOWN). Returns
+    an ``indexation_rate`` and a ``health`` of green / amber / red. Use 14
+    and 30 days after launch to track recovery.
+    """
+    return with_meta(
+        ix.indexation_recovery_monitor(
+            site_url, urls, days_after_launch=days_after_launch, pause_ms=pause_ms,
+        ),
+        source="migration.indexation_recovery_monitor",
+        site_url=site_url,
     )

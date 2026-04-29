@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "google-seo-mcp"
-version = "0.3.0"
+version = "0.4.0"
 description = "The complete Google SEO MCP for Claude Code & Cursor — Search Console + Analytics 4 + cross-platform intelligence (GSC↔GA4 journey, opportunity matrix, revenue attribution, traffic health check). Diagnostic SEO logic, anti-hallucination provenance, read-only by default."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -39,6 +39,7 @@ dependencies = [
     "pytrends>=4.9.2",
     "advertools>=0.16.0",
     "rapidfuzz>=3.0.0",
+    "waybackpy>=3.0.6",
 ]
 
 [project.optional-dependencies]

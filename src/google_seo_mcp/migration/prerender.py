@@ -97,6 +97,17 @@ def _extract_signals(html: str, url: str) -> dict[str, Any]:
 
 def fetch_as(url: str, ua: str, timeout: float = 30.0) -> str:
     """Fetch URL with a specific User-Agent. Raises RuntimeError on HTTP errors."""
+    return fetch_as_with_meta(url, ua, timeout=timeout, raise_on_error=True)["text"]
+
+
+def fetch_as_with_meta(
+    url: str, ua: str, timeout: float = 30.0, raise_on_error: bool = False
+) -> dict[str, Any]:
+    """Fetch URL with a UA and return text + status + headers + Cloudflare metadata.
+
+    Returns ``{"text": str, "status": int, "headers": dict, "cf": {...}}``. Use
+    ``raise_on_error=True`` to mimic ``fetch_as`` legacy behaviour.
+    """
     headers = {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -107,9 +118,21 @@ def fetch_as(url: str, ua: str, timeout: float = 30.0) -> str:
             resp = client.get(url)
     except httpx.HTTPError as e:
         raise RuntimeError(f"Fetch failed: {type(e).__name__}: {e}") from None
-    if resp.status_code >= 400:
+    if raise_on_error and resp.status_code >= 400:
         raise RuntimeError(f"HTTP {resp.status_code} at {url}")
-    return resp.text
+    h = {k.lower(): v for k, v in resp.headers.items()}
+    return {
+        "text": resp.text,
+        "status": resp.status_code,
+        "headers": h,
+        "cf": {
+            "mitigated": h.get("cf-mitigated"),
+            "cache_status": h.get("cf-cache-status"),
+            "ray": h.get("cf-ray"),
+            "vary": h.get("vary", ""),
+            "server": h.get("server", ""),
+        },
+    }
 
 
 def prerender_signals(url: str) -> dict[str, Any]:

@@ -4,6 +4,66 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-04-29
+
+### Added — Migration module v2 (4 new tools, 69 → 73 total)
+
+Driven by an independent design review (a fresh team of Ralph Loop iterators
+delegated via `docs/delegations/wp-to-jsstack-migration-brief.md`). Their
+output proposed several capabilities the original v0.3.0 implementation
+missed. Four were integrated:
+
+- `migration_wayback_baseline` — anchor what existed BEFORE migration via
+  the Internet Archive CDX API. Free, no key. Use as step 1 of any migration
+  workflow so you can prove "what we had" months later.
+- `migration_schema_parity_check` — compare JSON-LD between old (WP) and
+  new (SSR) URLs. Reports missing types, lost critical properties (e.g.
+  `Article.headline`, `Product.offers`), and a `parity_score` 0..1. Catches
+  rich-result regressions before Google reindexes.
+- `migration_hreflang_cluster_audit` — verify reciprocity across multi-
+  language clusters. Cross-domain support (e.g. example.com ES ↔
+  example.org FR, which the test surfaced as a real
+  gap on the live site).
+- `migration_indexation_recovery_monitor` — post-launch monitoring via GSC
+  URL Inspection API (NOT the Indexing API, which is officially restricted
+  to JobPosting). Aggregates URLs into INDEXED / DISCOVERED / SOFT_404 /
+  BLOCKED / ERROR / UNKNOWN with a health classification.
+
+### Improved — `migration_googlebot_diff` and `migration_multi_bot_diff`
+
+The original cloaking detectors were prone to false positives. Added 5
+anti-FP guards (also from the fresh-team review):
+
+1. **Entity-encoding equivalence** — `&iquest;` vs `¿` no longer trigger.
+   `_extract_signals` already decoded these via `_decode()`; this is now
+   documented as the official guard.
+2. **Cloudflare Bot Fight Mode** — when a bot UA receives 503/403 with
+   `cf-mitigated` header, the verdict is `inconclusive`, not `cloaking`.
+3. **Vary header caveat** — if the response doesn't list `User-Agent` in
+   `Vary`, the CDN can't legitimately differentiate by UA; surfaced as a
+   note before any cloaking flag.
+4. **A/B test threshold** — escalation to `critical` now requires both meta
+   divergence AND >30% size spread (was 20%). Below: `warning`, not
+   `critical`. Filters legitimate A/B tests.
+5. **Cache miss vs hit** — when bot/user diverge, double-fetch the user side
+   with a 5s gap. If `cf-cache-status` changes between fetches AND content
+   changes, mark `cache_artifact_detected: true` and don't flag cloaking.
+
+The output now includes `fp_filters_applied: []`, `cache_artifact_detected`,
+and per-UA `cf` metadata (status, ray, cache, vary, server) so you can
+trust the `severity` field.
+
+### Added — `fetch_as_with_meta` (internal)
+
+`prerender.py` now exports `fetch_as_with_meta(url, ua)` returning
+`{text, status, headers, cf{...}}`. The legacy `fetch_as()` remains as a
+backwards-compatible thin wrapper.
+
+### Dependencies
+
+- New: `waybackpy>=3.0.6` (used internally; we hit CDX directly via httpx
+  but pin the lib for reference parity with the brief).
+
 ## [0.3.0] — 2026-04-29
 
 ### Added — Migration module (15 new tools, 54 → 69 total)
