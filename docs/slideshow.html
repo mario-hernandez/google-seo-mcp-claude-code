@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qué es google-seo-mcp — explicado en cristiano</title>
+<style>
+  :root {
+    --bg: #0A1628;
+    --bg2: #1A0F3A;
+    --bg3: #2D1B5E;
+    --fg: #F8FAFC;
+    --dim: #94A3B8;
+    --green: #22C55E;
+    --amber: #F59E0B;
+    --cyan: #22D3EE;
+    --violet: #C084FC;
+    --card: rgba(255,255,255,0.06);
+    --border: rgba(255,255,255,0.12);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    background: linear-gradient(135deg, var(--bg) 0%, var(--bg2) 50%, var(--bg3) 100%);
+    color: var(--fg);
+    overflow: hidden;
+    line-height: 1.55;
+  }
+  .deck {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .slide {
+    display: none;
+    flex: 1;
+    padding: 4rem 6rem;
+    overflow-y: auto;
+    animation: fadein 0.4s ease-out;
+  }
+  .slide.active { display: flex; flex-direction: column; justify-content: center; }
+  @keyframes fadein {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+  h1 {
+    font-size: 2.8rem;
+    font-weight: 800;
+    margin: 0 0 1.5rem 0;
+    background: linear-gradient(90deg, var(--fg) 0%, var(--cyan) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    line-height: 1.15;
+  }
+  h2 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--cyan);
+    margin: 0 0 1rem 0;
+  }
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--violet);
+    margin: 1.5rem 0 0.5rem;
+  }
+  p { font-size: 1.15rem; max-width: 64ch; color: var(--fg); }
+  p.lead { font-size: 1.4rem; color: var(--fg); }
+  p.dim { color: var(--dim); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+    margin-top: 1.5rem;
+  }
+  .grid.three { grid-template-columns: repeat(3, 1fr); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    backdrop-filter: blur(8px);
+  }
+  .card .num {
+    font-size: 2.4rem;
+    font-weight: 800;
+    color: var(--cyan);
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+  .card .label { color: var(--dim); font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .card .body { margin-top: 0.25rem; font-size: 1rem; }
+  .green { color: var(--green); }
+  .amber { color: var(--amber); }
+  .red { color: #EF4444; }
+  .badge {
+    display: inline-block;
+    background: rgba(34,211,238,0.14);
+    border: 1px solid rgba(34,211,238,0.3);
+    color: var(--cyan);
+    padding: 0.2rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+  }
+  ul { padding-left: 1.4rem; }
+  li { margin-bottom: 0.6rem; font-size: 1.1rem; }
+  li strong { color: var(--cyan); }
+  code {
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--border);
+    padding: 0.1rem 0.4rem;
+    border-radius: 6px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.95em;
+    color: var(--green);
+  }
+  pre {
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.95rem;
+    overflow-x: auto;
+    color: var(--fg);
+  }
+  .convo {
+    background: rgba(34,211,238,0.06);
+    border-left: 3px solid var(--cyan);
+    padding: 0.75rem 1.25rem;
+    margin: 0.75rem 0;
+    border-radius: 0 10px 10px 0;
+    font-size: 1.1rem;
+  }
+  .convo.user { border-left-color: var(--violet); }
+  .convo.user strong { color: var(--violet); }
+  .convo.bot strong { color: var(--cyan); }
+
+  /* Nav */
+  .nav {
+    position: fixed;
+    bottom: 1.25rem;
+    right: 1.5rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.4rem 1rem;
+    backdrop-filter: blur(10px);
+    font-size: 0.95rem;
+  }
+  .nav button {
+    background: transparent;
+    color: var(--fg);
+    border: none;
+    cursor: pointer;
+    padding: 0.4rem 0.75rem;
+    font-size: 1rem;
+    border-radius: 999px;
+  }
+  .nav button:hover { background: rgba(255,255,255,0.08); }
+  .nav .counter { color: var(--dim); padding: 0 0.5rem; }
+  .progress {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: rgba(255,255,255,0.05);
+    z-index: 10;
+  }
+  .progress > div {
+    height: 100%;
+    background: linear-gradient(90deg, var(--cyan), var(--violet));
+    transition: width 0.4s ease;
+  }
+
+  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--dim); font-weight: 600; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { font-size: 1rem; }
+  td:first-child { color: var(--cyan); font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.95em; }
+
+  .hint { color: var(--dim); font-size: 0.9rem; margin-top: 2rem; }
+  kbd {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    padding: 0.1rem 0.45rem;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 0.85em;
+  }
+
+  @media (max-width: 900px) {
+    .slide { padding: 2.5rem 1.5rem; }
+    h1 { font-size: 2rem; }
+    h2 { font-size: 1.4rem; }
+    .grid, .grid.three { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress"><div id="progress-bar" style="width: 0%;"></div></div>
+
+<div class="deck" id="deck">
+
+  <!-- 1 -->
+  <section class="slide active">
+    <span class="badge">en cristiano · 12 slides · ←/→ para navegar</span>
+    <h1>Qué hace este MCP, sin jerga</h1>
+    <p class="lead">Un asistente que tu Claude usa para responder a preguntas de SEO de cualquiera de tus webs <strong>con datos reales y verificables</strong> de Google — no inventando.</p>
+    <p class="dim">Si una herramienta te dice "el tráfico cayó 24%", lo dice con la fecha exacta, la fuente exacta y el período exacto. Y la siguiente herramienta te dice <em>por qué</em> cayó.</p>
+  </section>
+
+  <!-- 2 -->
+  <section class="slide">
+    <h2>El problema que resuelve</h2>
+    <p class="lead">Cuando un cliente pregunta <em>"¿por qué bajó el tráfico orgánico?"</em>, lo normal es:</p>
+    <ul>
+      <li>Abrir Search Console → mirar gráfico</li>
+      <li>Abrir Analytics 4 → mirar otro gráfico</li>
+      <li>Abrir un Excel → cruzar a mano</li>
+      <li>Pegar capturas a ChatGPT → que se invente la conclusión</li>
+      <li>Tardar <strong>2 horas</strong> en una respuesta que nadie verifica</li>
+    </ul>
+    <p>Con esto:</p>
+    <div class="convo user"><strong>Tú:</strong> "¿Por qué bajó el tráfico de cliente X este mes?"</div>
+    <div class="convo bot"><strong>Claude:</strong> ejecuta 3 herramientas, cita fuentes y períodos reales, y devuelve un diagnóstico clasificado en <strong>15 segundos</strong>.</div>
+  </section>
+
+  <!-- 3 -->
+  <section class="slide">
+    <h2>Lo que hace por dentro</h2>
+    <p class="lead">Es un puente entre Claude y las APIs gratuitas de Google que cualquier consultor SEO usaría… si tuviera tiempo.</p>
+    <div class="grid three">
+      <div class="card">
+        <div class="num">78</div>
+        <div class="label">Herramientas listas</div>
+        <div class="body">Cada una hace una pregunta concreta a la API correcta y devuelve un diagnóstico, no un volcado de filas.</div>
+      </div>
+      <div class="card">
+        <div class="num">11</div>
+        <div class="label">Categorías</div>
+        <div class="body">Search Console, Analytics 4, Cross-platform, Lighthouse, CrUX, Schema, Migration, Indexing, Trends, AEO, Meta.</div>
+      </div>
+      <div class="card">
+        <div class="num">0 €</div>
+        <div class="label">Coste de APIs</div>
+        <div class="body">Todo usa cuotas gratuitas de Google. Solo pagas en SaaS de pago si necesitas algo muy específico (Ahrefs, etc.).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section class="slide">
+    <h2>Las 11 categorías, en cristiano</h2>
+    <table>
+      <tr><th>Categoría</th><th>Cuántas</th><th>Para qué sirve</th></tr>
+      <tr><td>GSC (Search Console)</td><td>12</td><td>Posiciones, clicks, CTR, canibalizaciones, drops de tráfico</td></tr>
+      <tr><td>GA4 (Analytics 4)</td><td>14</td><td>Sesiones, conversiones, atribución, anomalías estacionalmente corregidas</td></tr>
+      <tr><td>Cross-platform</td><td>6</td><td>El cruce GSC↔GA4 que nadie más hace: ¿qué keywords pagan?, ¿qué páginas convertirían si subieran de posición?</td></tr>
+      <tr><td>Migration</td><td>21</td><td>WordPress → React/Next sin perder rankings: equity report, robots.txt diff, redirects plan, schema parity, hreflang</td></tr>
+      <tr><td>Lighthouse / PSI</td><td>5</td><td>Velocidad de carga, Core Web Vitals (con datos reales de usuarios, no solo lab)</td></tr>
+      <tr><td>CrUX</td><td>3</td><td>Histórico de Core Web Vitals real (Chrome) hasta 6 meses</td></tr>
+      <tr><td>Schema</td><td>3</td><td>Validar JSON-LD, sugerir esquemas, comparar entre versiones</td></tr>
+      <tr><td>Indexing</td><td>5</td><td>IndexNow (Bing/Yandex) y Google Indexing API</td></tr>
+      <tr><td>Trends/Suggest/Alerts</td><td>5</td><td>110 long-tails de un seed, Google Trends, Google Alerts RSS</td></tr>
+      <tr><td>AEO</td><td>2</td><td>llms.txt y política para los 16 bots de IA (GPTBot, ClaudeBot, Perplexity…)</td></tr>
+      <tr><td>Meta</td><td>2</td><td>Listar herramientas, reautenticar</td></tr>
+    </table>
+  </section>
+
+  <!-- 5 -->
+  <section class="slide">
+    <h2>Las 6 cross-platform — la joya</h2>
+    <p>El motivo por el que tener GSC y GA4 en el <strong>mismo</strong> MCP en vez de dos separados.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>cross_seo_to_revenue_attribution</h3>
+        <p class="body">"¿Qué keywords orgánicas <em>realmente</em> generan revenue?" Cruza clicks GSC con revenue GA4 con banda de confianza del 50%.</p>
+      </div>
+      <div class="card">
+        <h3>cross_opportunity_matrix</h3>
+        <p class="body">Páginas que están en posición 4-15 (subibles) Y convierten bien (worth optimizing). 4 cuadrantes: dónde meter horas.</p>
+      </div>
+      <div class="card">
+        <h3>cross_traffic_health_check</h3>
+        <p class="body">Compara clicks GSC vs sesiones GA4. Si discrepan demasiado, el tracking está roto antes de empezar a analizar.</p>
+      </div>
+      <div class="card">
+        <h3>cross_landing_page_full_diagnosis</h3>
+        <p class="body">Diagnóstico completo de una página: rankings, conversión, canibalización, score 0-100, lista de issues concretos.</p>
+      </div>
+      <div class="card">
+        <h3>cross_gsc_to_ga4_journey</h3>
+        <p class="body">Dada una landing, te dice qué queries la traen (GSC) y qué hacen los usuarios al llegar (GA4).</p>
+      </div>
+      <div class="card">
+        <h3>cross_multi_property_comparison</h3>
+        <p class="body">Cliente con 12 propiedades GA4 (multi-locales): ranking en paralelo en una sola llamada.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section class="slide">
+    <h2>Conversaciones reales que ahora son posibles</h2>
+    <div class="convo user"><strong>Tú:</strong> "¿Cuál es el ROI SEO de cliente X este mes?"</div>
+    <div class="convo bot"><strong>Claude:</strong> ejecuta <code>cross_seo_to_revenue_attribution</code>, devuelve top 50 queries con revenue atribuido y banda de confianza.</div>
+
+    <div class="convo user"><strong>Tú:</strong> "Migré WordPress a Next.js hace 14 días. ¿Cómo va la indexación?"</div>
+    <div class="convo bot"><strong>Claude:</strong> ejecuta <code>migration_indexation_recovery_monitor</code>, devuelve % indexadas, soft-404s, bloqueadas, descubiertas-no-indexadas.</div>
+
+    <div class="convo user"><strong>Tú:</strong> "¿Wellness sale en respuestas de ChatGPT y Perplexity?"</div>
+    <div class="convo bot"><strong>Claude:</strong> ejecuta <code>aeo_ai_bots_robots_audit</code> + <code>aeo_llms_txt_check</code>. Detecta que no hay llms.txt y que están permitidos todos los bots IA, incluido CCBot (Common Crawl alimenta entrenamiento LLM).</div>
+
+    <div class="convo user"><strong>Tú:</strong> "Compárame el rendimiento orgánico de mis 12 tiendas locales."</div>
+    <div class="convo bot"><strong>Claude:</strong> ejecuta <code>cross_multi_property_comparison</code> con las 12 properties en paralelo y te devuelve un ranking.</div>
+  </section>
+
+  <!-- 7 -->
+  <section class="slide">
+    <h2>El "no se inventa nada" — provenance</h2>
+    <p class="lead">Cada respuesta lleva un sobre con metadatos. El LLM <strong>no puede</strong> citar un número sin decir de dónde sale.</p>
+    <pre>{
+  "data": {
+    "diagnosis": "healthy",
+    "ratio_ga4_to_gsc": 0.684,
+    "gsc_organic_clicks": 477,
+    "ga4_organic_sessions": 290
+  },
+  "_meta": {
+    "source": "crossplatform.traffic_health_check",
+    "site_url": "https://example.com/",
+    "property": "properties/123456789",
+    "period": {
+      "gsc": { "start": "2026-03-27", "end": "2026-04-23" },
+      "ga4": { "start": "2026-03-29", "end": "2026-04-25" }
+    },
+    "fetched_at": "2026-04-30T10:25:14Z"
+  }
+}</pre>
+    <p class="dim">El agente está obligado a citar <code>_meta.source</code> y <code>_meta.period</code> al reportar números. Si no lo hace, le instruyes a que lo haga (está en <code>AGENTS.md</code>).</p>
+  </section>
+
+  <!-- 8 -->
+  <section class="slide">
+    <h2>Multi-cliente — la trampa que estaba arreglada en v0.7.1</h2>
+    <p>Antes: hacías <code>gcloud auth login</code> con cliente B y las herramientas seguían devolviendo datos del <strong>cliente A</strong> sin avisar. Bug invisible.</p>
+    <p>Ahora: el MCP detecta automáticamente el cambio de cuenta y rebuilda los clientes Google internos.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Antes ❌</h3>
+        <p class="body"><strong>Sofrocay → Cliente B</strong>: tools devuelven datos de Sofrocay sin error visible. Reportas mal a Cliente B.</p>
+      </div>
+      <div class="card">
+        <h3>Ahora ✅</h3>
+        <p class="body">Hash de los paths de credenciales + sus mtimes + token.json. Cambio detectado al instante. Cliente A queda atrás.</p>
+      </div>
+    </div>
+    <p class="hint">Esto era el bug más serio para tu visión "una herramienta para varias webs". Solucionado.</p>
+  </section>
+
+  <!-- 9 -->
+  <section class="slide">
+    <h2>Lo que NO hace (honestidad)</h2>
+    <p class="lead">No es una varita mágica. Hay cosas que solo se compran en SaaS de pago.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>❌ Backlinks profundos</h3>
+        <p class="body">Eso es Ahrefs / Majestic / SEMrush. Tienen su propia DB de backlinks construida con scraping masivo.</p>
+      </div>
+      <div class="card">
+        <h3>❌ Keywords con su volumen real</h3>
+        <p class="body">Search volume preciso es propietario. Aquí ves Trends + Suggest, suficiente para detectar tendencias pero no para reportes.</p>
+      </div>
+      <div class="card">
+        <h3>❌ Logs de servidor</h3>
+        <p class="body">Para ver Googlebot real (no UA spoof) hace falta acceso al servidor + parser de logs. No está integrado todavía.</p>
+      </div>
+      <div class="card">
+        <h3>❌ SERP scraping en tiempo real</h3>
+        <p class="body">Para detectar AI Overview activamente necesitas DataForSEO / SerpApi (~30 €/mes). Aquí lo inferimos por CTR collapse.</p>
+      </div>
+    </div>
+    <p>Para todo lo demás — el 95% de lo que un consultor SEO necesita en su día a día — esto basta.</p>
+  </section>
+
+  <!-- 10 -->
+  <section class="slide">
+    <h2>Cómo se prueba (3 capas)</h2>
+    <h3>Capa 1: tests unitarios (3 segundos)</h3>
+    <pre>.venv/bin/pytest tests/ -q</pre>
+    <p class="dim">92 tests con mocks. Sin red. Pillan regresiones en lógica pura: CTR benchmarks, fingerprint multi-tenant, _json_safe coercion, KeyError, atomic writes.</p>
+
+    <h3>Capa 2: smoke test contra APIs reales (30 segundos)</h3>
+    <pre>.venv/bin/python scripts/smoke_test.py</pre>
+    <p class="dim">Prueba las 6 capas de la suite usando la primera GSC site / GA4 property que tu cuenta tenga.</p>
+
+    <h3>Capa 3: probe per-cliente (2 minutos)</h3>
+    <pre>.venv/bin/python scripts/client_probe.py \
+    --gsc-site "https://cliente-x.com/" \
+    --ga4-property "properties/123456789"</pre>
+    <p class="dim">Probará las 8 capas (auth, GSC, GA4, cross-platform, schema+AEO, migration, multi-tenant). Devuelve JSON con OK/FAIL por herramienta.</p>
+  </section>
+
+  <!-- 11 -->
+  <section class="slide">
+    <h2>El flujo cuando llega un cliente nuevo</h2>
+    <ol style="font-size: 1.15rem; line-height: 1.9;">
+      <li>Pides al cliente que añada tu cuenta de Google a su <strong>GSC</strong> (Viewer) y a su <strong>GA4</strong> (Viewer).</li>
+      <li>Ejecutas <code>scripts/client_probe.py</code> con el GSC site + GA4 property del cliente.</li>
+      <li>Si todo pasa <strong class="green">OK</strong>: ya puedes preguntar a Claude lo que quieras de ese cliente.</li>
+      <li>Si algo da <strong class="red">FAIL</strong>: investigas el traceback antes de prometer nada al cliente.</li>
+      <li>El probe es <strong>read-only</strong> — no toca nada en sus propiedades.</li>
+    </ol>
+    <p class="hint">Lo que normalmente lleva un día de setup por cliente, pasa a 2 minutos verificables.</p>
+  </section>
+
+  <!-- 12 -->
+  <section class="slide" style="text-align: center; align-items: center;">
+    <h1 style="font-size: 3.5rem;">Resumen</h1>
+    <p class="lead" style="text-align: center;">Un MCP que convierte a Claude en consultor SEO senior <em>multi-cliente</em>.</p>
+    <div class="grid three" style="margin-top: 2rem; max-width: 900px; margin-left: auto; margin-right: auto;">
+      <div class="card">
+        <div class="num green">95%</div>
+        <div class="label">de SEO diario</div>
+        <div class="body">cubierto sin SaaS de pago</div>
+      </div>
+      <div class="card">
+        <div class="num">15s</div>
+        <div class="label">por diagnóstico</div>
+        <div class="body">vs 2h pegando capturas a ChatGPT</div>
+      </div>
+      <div class="card">
+        <div class="num green">0</div>
+        <div class="label">datos inventados</div>
+        <div class="body">cada número con fuente y fecha</div>
+      </div>
+    </div>
+    <p class="hint" style="margin-top: 3rem;">github.com/mario-hernandez/google-seo-mcp-claude-code · v0.7.1 · MIT</p>
+  </section>
+
+</div>
+
+<div class="nav">
+  <button onclick="go(-1)" aria-label="anterior">←</button>
+  <span class="counter"><span id="cur">1</span> / <span id="total">12</span></span>
+  <button onclick="go(1)" aria-label="siguiente">→</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const total = slides.length;
+  let idx = 0;
+  document.getElementById('total').textContent = total;
+
+  function show(i) {
+    slides.forEach((s, n) => s.classList.toggle('active', n === i));
+    idx = i;
+    document.getElementById('cur').textContent = i + 1;
+    document.getElementById('progress-bar').style.width = ((i + 1) / total * 100) + '%';
+  }
+  function go(d) {
+    const next = (idx + d + total) % total;
+    show(next);
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') go(1);
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') go(-1);
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(total - 1);
+  });
+  // tap-to-advance on touch
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.nav') || e.target.closest('a')) return;
+    const x = e.clientX;
+    const w = window.innerWidth;
+    if (x > w * 0.66) go(1);
+    else if (x < w * 0.33) go(-1);
+  });
+</script>
+
+</body>
+</html>
