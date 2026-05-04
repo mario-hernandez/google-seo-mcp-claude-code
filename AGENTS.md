@@ -31,7 +31,7 @@
 
 ## 2. Tool inventory
 
-**33 tools + 1 reference resource**. One-line *use-when* per tool. Full signatures in source.
+**100 tools + 1 reference resource** across 14 categories. Don't trust this hardcoded number — call `get_capabilities` to read the live registry, which derives categories dynamically from the actual registered tools (no drift). One-line *use-when* per tool below. Full signatures in source.
 
 ### 🔄 Cross-platform (6) — the differentiators
 | Tool | Use when |
