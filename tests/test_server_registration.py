@@ -10,8 +10,8 @@ def test_tool_count():
     # 21 migration core + 2 AEO + 3 meta (get_capabilities, reload_credentials,
     # reauthenticate alias) + v0.8.0: 3 history + 4 serp + 7 logs +
     # 4 migration crawl_advanced + 2 singular wrappers (migration_redirect_chain,
-    # migration_image_alts) = 99
-    assert len(tools) == 99, f"Expected 99 tools, got {len(tools)}"
+    # migration_image_alts) + v0.8.3: 1 migration_prerender_check_batch = 100
+    assert len(tools) == 100, f"Expected 100 tools, got {len(tools)}"
 
 
 def test_tool_names_have_expected_prefixes():

@@ -79,8 +79,17 @@ def _extract_signals(html: str, url: str) -> dict[str, Any]:
     h1s = re.findall(r"<h1[^>]*>(.*?)</h1>", html, re.IGNORECASE | re.DOTALL)
     signals["h1"] = [_decode(re.sub(r"<[^>]+>", "", h).strip()) for h in h1s]
 
+    # Tolerant regex: accepts whitespace around `=`, single OR double quotes,
+    # extra attributes before/after `type=` (data-react-helmet, nonce, async,
+    # defer), AND whitespace before the closing `>` of `</script>`. The
+    # original strict pattern was missing JSON-LD blocks emitted by some
+    # SSR libraries that format their output with trailing whitespace.
+    # For rigorous parsing use `schema_extract_url` (extruct-based); this
+    # regex is a fast heuristic count.
     jsonld = re.findall(
-        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.+?)</script>',
+        r'<script\b[^>]*?\btype\s*=\s*["\']application/ld\+json["\'][^>]*?>'
+        r'(.+?)'
+        r'</script\s*>',
         html,
         re.IGNORECASE | re.DOTALL,
     )
@@ -315,6 +324,48 @@ def prerender_signals(url: str) -> dict[str, Any]:
         "head_only": "Head pre-rendered, body relies on JS hydration. Works for Googlebot's JS-rendering pipeline but FAILS for Bingbot, AEO bots (ChatGPT/Claude/Perplexity), and social scrapers (Facebook/Twitter/LinkedIn). Operationally a common intermediate state — viable for Google-only audiences, blocking for AEO 2026.",
         "csr": "Pure client-side render. Empty head AND empty body. Catastrophic for any non-JS-executing crawler.",
         "unknown": "Fetch failed or content couldn't be classified. Re-run after fixing connectivity.",
+    }[sig["prerender_mode"]]
+
+    # Structured per-crawler viability matrix so an agent can branch on
+    # explicit boolean flags instead of parsing the explanation prose.
+    # `googlebot_with_js` = will Google's JS-rendering pipeline see the page
+    # correctly (has a 5s timeout in 2026)? `_without_js` = does the raw
+    # HTML alone work for the rare cases where Googlebot skips rendering?
+    # Bingbot, AEO bots, social scrapers, and Wayback Machine never execute
+    # JS — they all need body content in the initial HTML.
+    sig["prerender_mode_viability"] = {
+        "ssr": {
+            "googlebot_with_js": True,
+            "googlebot_without_js": True,
+            "bingbot": True,
+            "aeo_bots": True,
+            "social_scrapers": True,
+            "wayback_machine": True,
+        },
+        "head_only": {
+            "googlebot_with_js": True,
+            "googlebot_without_js": False,
+            "bingbot": False,
+            "aeo_bots": False,
+            "social_scrapers": False,
+            "wayback_machine": False,
+        },
+        "csr": {
+            "googlebot_with_js": False,
+            "googlebot_without_js": False,
+            "bingbot": False,
+            "aeo_bots": False,
+            "social_scrapers": False,
+            "wayback_machine": False,
+        },
+        "unknown": {
+            "googlebot_with_js": None,
+            "googlebot_without_js": None,
+            "bingbot": None,
+            "aeo_bots": None,
+            "social_scrapers": None,
+            "wayback_machine": None,
+        },
     }[sig["prerender_mode"]]
 
     if not issues:

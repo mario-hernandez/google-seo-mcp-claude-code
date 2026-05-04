@@ -97,6 +97,81 @@ def prerender_check(url: str) -> dict:
     return with_meta(pr.prerender_signals(url), source="migration.prerender_check", site_url=url)
 
 
+def prerender_check_batch(urls: list[str], concurrency: int = 8) -> dict:
+    """Run ``prerender_check`` over a list of URLs in parallel.
+
+    For multi-URL audits (e.g. confirming every page of a freshly-deployed
+    site is properly pre-rendered before flipping DNS), serialised calls take
+    minutes — most of it network wait. This runs them concurrently with a
+    rate-limit and returns a per-URL result list plus a summary the agent
+    can read in a single glance to decide "is the site ready to ship?".
+
+    Args:
+        urls: list of URLs to audit. Each is fetched without executing JS
+            and run through the full ``prerender_signals`` analysis.
+        concurrency: max parallel HTTP fetches. Default 8 is a polite ceiling
+            for a single origin under your control. Bump to 16 on a CDN.
+
+    Returns:
+        ``results``: list of per-URL outputs (same shape as ``prerender_check``).
+        ``summary``: aggregate counts so the agent can branch on a single
+            field — ``ssr``/``head_only``/``csr``/``unknown``/``errors``,
+            plus convenience flags ``any_red``, ``any_head_only``, ``all_ssr``.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    results: list[dict] = []
+    errors_count = 0
+
+    def _one(u: str) -> dict:
+        try:
+            return pr.prerender_signals(u)
+        except Exception as e:
+            return {
+                "url": u,
+                "error": f"{type(e).__name__}: {str(e)[:200]}",
+                "prerender_mode": "unknown",
+                "health": "red",
+            }
+
+    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+        futures = {pool.submit(_one, u): u for u in urls}
+        for fut in as_completed(futures):
+            results.append(fut.result())
+
+    # Preserve input order in the output (futures complete out of order).
+    by_url = {r.get("url") or futures_url: r for r, futures_url in zip(results, urls)}
+    ordered = [by_url.get(u, {"url": u, "error": "missing"}) for u in urls]
+
+    mode_counts = {"ssr": 0, "head_only": 0, "csr": 0, "unknown": 0}
+    health_counts = {"green": 0, "amber": 0, "red": 0}
+    for r in ordered:
+        mode = r.get("prerender_mode", "unknown")
+        mode_counts[mode] = mode_counts.get(mode, 0) + 1
+        h = r.get("health", "red")
+        health_counts[h] = health_counts.get(h, 0) + 1
+        if "error" in r:
+            errors_count += 1
+
+    summary = {
+        "total": len(urls),
+        **mode_counts,
+        "errors": errors_count,
+        "health_green": health_counts.get("green", 0),
+        "health_amber": health_counts.get("amber", 0),
+        "health_red": health_counts.get("red", 0),
+        "any_red": health_counts.get("red", 0) > 0,
+        "any_head_only": mode_counts.get("head_only", 0) > 0,
+        "all_ssr": mode_counts.get("ssr", 0) == len(urls),
+    }
+
+    return with_meta(
+        {"results": ordered, "summary": summary},
+        source="migration.prerender_check_batch",
+        extra={"concurrency": concurrency},
+    )
+
+
 def prerender_vs_hydrated(url: str, wait_ms: int = 2000) -> dict:
     """Compare pre-rendered HTML (no JS) vs DOM after hydration.
 

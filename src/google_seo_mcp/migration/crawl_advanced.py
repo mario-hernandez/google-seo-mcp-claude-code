@@ -58,20 +58,35 @@ def crawl_redirect_chains(
                         break
                     seen.add(current)
                     r = c.get(current)
+                    next_loc: str | None = None
+                    if 300 <= r.status_code < 400 and "location" in r.headers:
+                        next_loc = urljoin(current, r.headers["location"])
+                    # Each hop now carries its `location` (the absolute URL of
+                    # the next hop) so an agent can read it directly without
+                    # cross-referencing chain[i+1].url. For terminal hops
+                    # (2xx, 4xx, 5xx) location is null.
                     chain.append({
                         "url": current,
                         "status": r.status_code,
+                        "location": next_loc,
                     })
-                    if 300 <= r.status_code < 400 and "location" in r.headers:
-                        loc = r.headers["location"]
-                        current = urljoin(current, loc)
-                        continue
-                    break
+                    if next_loc is None:
+                        break
+                    current = next_loc
         except httpx.HTTPError as e:
-            chain.append({"url": current, "error": f"{type(e).__name__}: {str(e)[:120]}"})
+            chain.append({
+                "url": current,
+                "status": None,
+                "location": None,
+                "error": f"{type(e).__name__}: {str(e)[:120]}",
+            })
 
         is_long = len(chain) > 3
         final_status = chain[-1].get("status") if chain else None
+        # final_url at top-level: the URL of the last hop (where the chain
+        # actually settled). Saves the agent from reading chain[-1].url on
+        # every call. For loops, it's the URL where the loop closed.
+        final_url = chain[-1].get("url") if chain else None
         is_broken = (final_status is None) or (final_status and final_status >= 400)
 
         if is_long:
@@ -89,6 +104,7 @@ def crawl_redirect_chains(
             "url": url,
             "chain": chain,
             "hops": len(chain) - 1,
+            "final_url": final_url,
             "final_status": final_status,
             "loop": loop,
             "broken": is_broken,

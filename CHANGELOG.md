@@ -4,6 +4,101 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] — 2026-05-04
+
+### 4 refinements after deeper real-world use of v0.8.2
+
+A migration consultant returned a second pass of feedback after running
+the full v0.8.2 audit on a live site. Three precise refinements + one
+hypothesis-testable bonus. All four fixed.
+
+### Fixed
+
+**`migration_redirect_chain` now includes `location` per hop and
+`final_url` top-level**. The docstring promised `{url, status, location}`
+but only `{url, status}` was emitted, forcing agents to write
+`chain[chain.length-1].url` to recover what should have been a sibling
+field. Now each hop carries `location` (the absolute URL of the next
+hop, or `null` on terminal hops) and the top-level result includes
+`final_url` alongside `final_status`. Spec now matches reality:
+
+```json
+{
+  "chain": [
+    {"url": "/foo/", "status": 301, "location": "https://.../foo"},
+    {"url": "/foo",  "status": 301, "location": "https://.../bar"},
+    {"url": "/bar",  "status": 200, "location": null}
+  ],
+  "hops": 2,
+  "final_url": "https://.../bar",
+  "final_status": 200,
+  "loop": false, "broken": false, "cross_domain": false
+}
+```
+
+**`prerender_mode_viability` — structured per-crawler boolean matrix**
+sits next to the human-prose `prerender_mode_explanation`. The
+explanation text described which crawlers fail in each mode, but an
+agent that wants to gate a cutover decision (`if not viability.aeo_bots:
+block_cutover()`) had to parse natural language. Now both layers exist:
+
+```json
+"prerender_mode": "head_only",
+"prerender_mode_explanation": "<human prose>",
+"prerender_mode_viability": {
+  "googlebot_with_js": true,
+  "googlebot_without_js": false,
+  "bingbot": false,
+  "aeo_bots": false,
+  "social_scrapers": false,
+  "wayback_machine": false
+}
+```
+
+The matrix is keyed on the actual crawl behaviour of each agent class:
+Googlebot (with/without JS), Bingbot, AEO bots (ChatGPT/Claude/Perplexity),
+social scrapers (Facebook/Twitter/LinkedIn), Wayback Machine. For
+`unknown` mode all values are `null` (don't make assumptions).
+
+**New tool `migration_prerender_check_batch`** for paralleled multi-URL
+audits. The single-URL `migration_prerender_check` was forcing serial
+loops over 70+ URL audits, taking 5+ minutes most of which was network
+wait. Batch version runs concurrent fetches with a configurable
+`concurrency` parameter (default 8) and returns a `summary` aggregate
+the agent can read in one glance to decide ship/no-ship:
+
+```json
+"summary": {
+  "total": 73,
+  "ssr": 0, "head_only": 73, "csr": 0, "unknown": 0,
+  "errors": 0,
+  "any_red": true, "any_head_only": true, "all_ssr": false
+}
+```
+
+**Hardened JSON-LD detector regex** in `prerender_signals`. The original
+pattern was strict enough to miss real-world variants:
+- whitespace around `type =` (some prettifiers emit this)
+- whitespace before the closing `>` of `</script >`
+- extra attributes before `type=` (data-react-helmet, nonce, async, defer)
+
+Now tolerant of all three. New `tests/test_jsonld_detector.py` locks
+in 11 cases covering the variants seen in the wild plus the false-positive
+guards (no match for `application/json` or plain `<script>`). For
+rigorous parsing use `schema_extract_url` (extruct-based); this regex
+remains a fast heuristic count for `prerender_signals`.
+
+### Tests
+103/103 pass (was 92; +11 new in `test_jsonld_detector.py`).
+`test_tool_count` updated 99 → 100.
+
+### Backward compatibility
+Strictly additive. All v0.8.2 fields and tools preserved; new fields
+added alongside existing ones; the new batch tool sits next to the
+single-URL one (both work).
+
+---
+
 ## [0.8.2] — 2026-05-04
 
 ### 4 fixes from a real-world technical review during a live migration
