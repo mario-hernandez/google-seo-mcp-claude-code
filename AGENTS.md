@@ -80,7 +80,8 @@
 | Tool | Use when |
 |---|---|
 | `get_capabilities` | First call when auth is uncertain — also returns the tool catalog. |
-| `reauthenticate` | Reset clients after credential changes. |
+| `reload_credentials` | Reset clients after credential changes. Returns `credential_type` so you know which method will be used next ('service_account' / 'adc' / 'oauth_flow' / 'none'). |
+| `reauthenticate` | Deprecated alias for `reload_credentials`. Kept for backward-compat. |
 
 ### 📚 MCP Resource (1)
 | Resource | Use when |
@@ -379,7 +380,9 @@ If the very first tool call (or any tool that hits Google APIs) errors with auth
 | `This app is blocked` (during OAuth flow) | OAuth client unverified for sensitive scopes | **Recommend Service Account**. Adding test users only works in External + Testing mode and has a 100-user lifecycle cap. |
 | `EOFError: EOF when reading a line` | Trying to run interactive `gcloud auth ... login` from a non-interactive shell (Claude Code, agent, CI) | **Recommend Service Account**. OAuth flow is not viable in this environment. |
 | `403 PERMISSION_DENIED — has not been used in project X` | Required APIs not enabled in GCP project | Tell the user to run `gcloud services enable searchconsole.googleapis.com analyticsadmin.googleapis.com analyticsdata.googleapis.com --project=<project>` |
-| `gsc_list_sites` / `ga4_list_properties` returns empty list | Auth identity has no access to any property | Tell the user to grant the auth identity (their Google account email or the SA email) **Restricted/Full** in GSC and **Viewer** in GA4 for each property they want accessed. |
+| `ga4_list_properties` returns empty list | Auth identity has no access to any GA4 property | Tell the user to grant the auth identity **Viewer** in GA4 (Admin → Property → Property Access Management → Add user). |
+| `gsc_list_sites` returns empty list (using ADC/OAuth) | No GSC site grants the user access | Tell the user to grant their email **Restricted/Full** in GSC (Settings → Users and permissions → Add user) for each site. |
+| `gsc_list_sites` returns empty list (using Service Account) | GSC user picker may reject SA emails entirely | Don't tell the user to "just add the SA email" — that often fails with "user not found". Recommend in order: (1) Domain-Wide Delegation if Workspace customer, (2) verify SA as property owner via DNS TXT record `google-site-verification=...`, (3) reuse an already-verified SA. See README.md § Troubleshooting → `gsc_list_sites returns an empty list`. |
 | Tool returns data from the wrong client | Stale credentials cached after rotation | Call `reauthenticate` tool. If still wrong, restart MCP client. |
 
 **Strong default recommendation when any auth error appears in headless / agent / multi-client / VPS contexts**: switch to Service Account. It eliminates token expiration, browser dependency, consent screen issues, and works identically across all environments. The setup walkthrough is in [README.md § Service Account setup](./README.md#service-account-setup-recommended-for-headless--multi-client) — point the user there explicitly rather than improvising the steps.

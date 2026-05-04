@@ -245,17 +245,33 @@ def google_algorithm_updates_resource() -> str:
 
 
 @mcp.tool()
-def reauthenticate() -> dict:
-    """Force re-authentication on the next API call.
+def reload_credentials() -> dict:
+    """Reset in-process auth clients and reload credentials on next call.
 
-    Useful when ADC credentials have changed or OAuth token has expired and
-    cached state is stale. Resets in-process clients for both GSC and GA4.
+    Use this when:
+      - You rotated the Service Account JSON file (GOOGLE_SEO_SERVICE_ACCOUNT_FILE).
+      - You ran `gcloud auth application-default login` and need the MCP to pick
+        up the new ADC.
+      - Tools are returning data from the previous client / tenant after switching.
+      - The cached OAuth token is stale and you want a fresh consent flow.
+
+    The response includes `credential_type` ('service_account' / 'adc' /
+    'oauth_flow' / 'none') so you know which method will be used on the next
+    call. Service Account credentials are self-issued JWTs — no real "re-auth"
+    happens, just a cache reset and JSON reload from disk. ADC and OAuth flow
+    do re-validate against Google.
     """
-    auth_module.reset_clients()
-    return {
-        "status": "ok",
-        "message": "Auth clients reset; next call will rebuild credentials for both GSC and GA4.",
-    }
+    return auth_module.reset_clients()
+
+
+@mcp.tool()
+def reauthenticate() -> dict:
+    """Deprecated alias for `reload_credentials`. Kept for backward compatibility.
+
+    Was misleading when the active credential is a Service Account (JWT-based,
+    no re-auth handshake exists). Use `reload_credentials` going forward.
+    """
+    return auth_module.reset_clients()
 
 
 @mcp.tool()

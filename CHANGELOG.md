@@ -4,6 +4,83 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] — 2026-05-04
+
+### Auth UX hardening based on real-world setup feedback
+
+A user finished a fresh setup with `v0.8.0`-class binary on a new machine
+(ADC revoked + OAuth blocked by Workspace + new Service Account). The
+v0.7.2 doc improvements helped them eventually reach a working state,
+but they hit four runtime / UX issues during the journey. All four fixed.
+
+### Runtime fixes
+
+- **`auth.py` — proactive ADC refresh validation**. `_from_adc()` now
+  ALWAYS attempts a `creds.refresh()` (not just when `creds.expired`)
+  whenever the ADC has a refresh token. This catches the case where
+  `creds.expired = False` but the underlying refresh token has been
+  silently revoked by Google — previously surfaced as a confusing
+  `invalid_grant` 503 deep inside the first tool call. Cost: ~100ms
+  one-time RPC at MCP cold start. Benefit: fail-fast with a clean
+  fallback to the configured Service Account, or an actionable error.
+
+- **`reset_clients()` and the new `reload_credentials` tool**. The old
+  `reauthenticate` name was misleading when the active credential is a
+  Service Account (SA tokens are self-issued JWTs — there's no
+  "re-auth" handshake to perform). The function now:
+  - Detects the active credential method (service_account / adc /
+    oauth_flow / none).
+  - Returns a credential-aware message explaining what just happened.
+  - Returns the credential_type in the response so the agent IA can
+    set expectations appropriately.
+
+- **New tool: `reload_credentials`**. Cleaner name for the operation.
+  `reauthenticate` kept as deprecated alias for backward-compat.
+  Total tool count: 78 → 79.
+
+### Documentation fixes
+
+- **README.md decision matrix and Authentication section reordered**.
+  Service Account is now the recommended default, listed first and
+  fully expanded. ADC and OAuth Desktop flow demoted to secondary
+  options with clear conditions ("if you're a single dev with a
+  working browser AND your OAuth client is verified"). The previous
+  ordering (ADC first, SA hidden in `<details>`) led real users to
+  pick the wrong method for their environment.
+
+- **README.md GOOGLE_PROJECT_ID**: documented that this var is
+  fingerprint-only — does NOT route requests to a specific GCP
+  project. The actual project is inferred from the active credential.
+  Setting it wrong does not break anything.
+
+- **README.md GSC + Service Account UI rejection**: documented that
+  Search Console's "Add user" picker often rejects SA emails with
+  "user not found", with three workarounds in order of preference
+  (Domain-Wide Delegation, DNS TXT verification, reusing a verified
+  SA). One real user wasted 10 minutes on this — now documented.
+
+- **README.md cleaner setup recommendation**: when running on Service
+  Account, explicitly recommend unsetting `GOOGLE_APPLICATION_CREDENTIALS`
+  and renaming the stale ADC file. Saves a network round-trip on every
+  cold start.
+
+- **AGENTS.md § 8b updated**: triage table includes the GSC + SA edge
+  case (don't tell users to "just add the SA email" — it usually fails)
+  and references the new `reload_credentials` tool.
+
+### Backward compatibility
+- `reauthenticate` tool still works (now an alias).
+- ADC users see no behavior change unless their token is revoked
+  (in which case the failure now surfaces ~100ms after MCP startup
+  instead of inside the first tool call).
+- No new env vars required. Existing configs work unchanged.
+
+### Tests
+92/92 pass. `test_tool_count` updated 78 → 79; `test_diagnostic_tools_have_guardrail_suffix`
+adds `reload_credentials` to the meta-tool exclusion set.
+
+---
+
 ## [0.7.2] — 2026-05-04
 
 ### Documentation & auth UX hardening (no feature changes, no breaking changes)
@@ -87,7 +164,7 @@ are fixed below. Tools registered: still 78. Tests: 74 → 92.
   ``GOOGLE_SEO_SERVICE_ACCOUNT_FILE`` / ``GOOGLE_SEO_OAUTH_CLIENT_FILE``
   paths, their mtimes, and the OAuth ``token.json`` mtime into a
   fingerprint. When the operator runs a different ``gcloud auth
-  application-default login`` mid-session (Sofrocay → cliente B →
+  application-default login`` mid-session (cliente A → cliente B →
   cliente C), the singletons are transparently invalidated. The
   previous behaviour silently kept returning data from the previous
   account.

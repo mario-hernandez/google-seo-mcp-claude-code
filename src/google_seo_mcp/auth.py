@@ -131,24 +131,31 @@ def _from_adc() -> Any | None:
     try:
         creds, project = google_auth_default(scopes=_scopes())
         log.info("Using ADC credentials (project=%s)", project)
-        # Validate that the refresh token still works. Catches the common
-        # "ADC was set up months ago, refresh token revoked by Google"
-        # silent failure before it surfaces as a confusing 503 deep inside
-        # the first tool call. If a SA file is configured, we let the
-        # cascade fall through to it instead of dying here.
+        # Validate that the refresh token actually still works against Google.
+        # We can't trust `creds.expired` alone: ADC tokens can have a not-yet-
+        # expired access token while the underlying refresh token has been
+        # silently revoked by Google (security policy, periods of inactivity,
+        # cross-machine reuse). The failure then surfaces as a confusing
+        # `invalid_grant` 503 inside the first tool call. Force a refresh
+        # ALWAYS (one extra ~100ms RPC at startup) to fail fast if the
+        # token is dead — and let the cascade fall through to the SA if
+        # one is configured.
         try:
-            if hasattr(creds, "expired") and creds.expired and creds.refresh_token:
+            if hasattr(creds, "refresh_token") and creds.refresh_token:
                 creds.refresh(Request())
         except RefreshError as e:
             sa_configured = bool(os.getenv("GOOGLE_SEO_SERVICE_ACCOUNT_FILE"))
             if sa_configured:
                 log.warning(
-                    "ADC refresh failed (%s) but a Service Account is configured — "
-                    "falling through to it.", e,
+                    "ADC refresh failed (%s). GOOGLE_APPLICATION_CREDENTIALS "
+                    "is set but the refresh token is revoked or expired. "
+                    "Falling through to GOOGLE_SEO_SERVICE_ACCOUNT_FILE. "
+                    "TIP: unset GOOGLE_APPLICATION_CREDENTIALS to skip this "
+                    "round-trip on every cold start.", e,
                 )
                 return None
-            # No SA fallback available — raise an actionable error rather
-            # than letting the LLM see a raw `invalid_grant` traceback.
+            # No SA fallback — raise an actionable error rather than let
+            # the LLM see a raw `invalid_grant` traceback later.
             raise RuntimeError(
                 "Google ADC refresh token is revoked or expired.\n"
                 "\n"
@@ -340,13 +347,45 @@ def get_admin_client() -> AnalyticsAdminServiceClient:
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
-def reset_clients(*, drop_oauth_token: bool = True) -> None:
-    """Force rebuild on next access — used by `reauthenticate` tool.
+def current_credential_type() -> str:
+    """Returns the credential method that the cascade WOULD pick right now.
+
+    Mirrors the cascade order in `_build_creds()`. Used by the
+    `reload_credentials` tool to give a context-specific message
+    (Service Account credentials are self-issued and don't need re-auth,
+    whereas ADC and OAuth flow can re-trigger a real auth handshake).
+
+    Returns one of: 'service_account', 'adc', 'oauth_flow', 'none'.
+    """
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") and Path(
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+    ).exists():
+        # ADC takes precedence over SA in the cascade IF the file exists.
+        return "adc"
+    sa = os.getenv("GOOGLE_SEO_SERVICE_ACCOUNT_FILE")
+    if sa and Path(sa).exists():
+        return "service_account"
+    oauth = os.getenv("GOOGLE_SEO_OAUTH_CLIENT_FILE")
+    if oauth and Path(oauth).exists():
+        return "oauth_flow"
+    # Default ADC (gcloud's `~/.config/gcloud/application_default_credentials.json`)
+    default_adc = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
+    if default_adc.exists():
+        return "adc"
+    return "none"
+
+
+def reset_clients(*, drop_oauth_token: bool = True) -> dict:
+    """Force rebuild on next access — used by `reload_credentials` tool.
 
     By default also deletes the cached OAuth `token.json` so that a fresh
     consent flow runs on next use. Pass `drop_oauth_token=False` to keep the
     cached token (useful when you only want to re-read ADC credentials after
     a `gcloud auth application-default login`).
+
+    Returns a dict with `credential_type` (which method the cascade will pick
+    on the next call) and a context-specific message that the MCP tool can
+    surface to the agent.
     """
     global _searchconsole_service, _webmasters_service, _ga4_data_client, _ga4_admin_client
     with _auth_lock:
@@ -355,14 +394,60 @@ def reset_clients(*, drop_oauth_token: bool = True) -> None:
         _ga4_data_client = None
         _ga4_admin_client = None
 
+    cred_type = current_credential_type()
+    deleted_token = False
+
     if drop_oauth_token:
         token_path = _config_dir() / "token.json"
         if token_path.exists():
             try:
                 token_path.unlink()
+                deleted_token = True
                 log.info("Cleared cached OAuth token at %s", token_path)
             except OSError as e:
                 log.warning("Could not delete cached token at %s: %s", token_path, e)
+
+    # Build a credential-aware message.
+    if cred_type == "service_account":
+        message = (
+            "In-process clients reset. Active credential: Service Account "
+            "(self-issued JWT, no re-auth needed). Next tool call will "
+            "reload the SA JSON from disk and rebuild the clients. "
+            "Use this if you swapped the SA file or rotated its key."
+        )
+    elif cred_type == "adc":
+        message = (
+            "In-process clients reset. Active credential: ADC "
+            "(`gcloud auth application-default`). Next tool call will "
+            "re-read the ADC file and try a refresh. If the refresh fails "
+            "with `invalid_grant`, run `gcloud auth application-default "
+            "login --scopes=...` or switch to a Service Account."
+        )
+    elif cred_type == "oauth_flow":
+        if deleted_token:
+            message = (
+                "In-process clients reset and cached OAuth token deleted. "
+                "Next tool call will trigger a fresh consent flow "
+                "(opens browser if interactive)."
+            )
+        else:
+            message = (
+                "In-process clients reset (OAuth token kept). Next tool "
+                "call will reload from cached token.json."
+            )
+    else:
+        message = (
+            "In-process clients reset, but NO credentials are configured. "
+            "Set one of: GOOGLE_SEO_SERVICE_ACCOUNT_FILE (recommended), "
+            "GOOGLE_APPLICATION_CREDENTIALS, GOOGLE_SEO_OAUTH_CLIENT_FILE. "
+            "See README.md § Authentication."
+        )
+
+    return {
+        "credential_type": cred_type,
+        "deleted_oauth_token": deleted_token,
+        "message": message,
+    }
 
 
 def normalize_property(property_id: int | str) -> str:

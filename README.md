@@ -47,11 +47,11 @@ Works with **Claude Code**, **Claude Desktop**, **Cursor**, **Windsurf**, and an
 
 | If you are… | Use this | One-line setup |
 |-------------|----------|----------------|
-| **Single user on your laptop** | ADC (default) | `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/analytics.readonly` |
-| **Headless server, CI, agent IA, multi-client agency, anything that can't open a browser** | **Service Account** ✅ recommended | Create a SA JSON in Cloud Console → grant the SA email read access on each GSC site + GA4 property → `export GOOGLE_SEO_SERVICE_ACCOUNT_FILE=/path/to/sa.json` |
-| **You don't have access to a Google Cloud project but have an OAuth Desktop client JSON** | OAuth Desktop flow | `export GOOGLE_SEO_OAUTH_CLIENT_FILE=/path/to/client.json` |
+| **Anything except a developer on a desktop with a working browser** (Claude Code, headless servers, agents IA, CI, multi-client agencies, Workspace accounts where the admin hasn't approved unverified apps…) | **Service Account** ✅ default | Create a SA JSON in Cloud Console → grant the SA email read access on each GSC site + GA4 property → `export GOOGLE_SEO_SERVICE_ACCOUNT_FILE=/path/to/sa.json` |
+| Single dev on a desktop, OAuth client already verified or your email registered as test user | ADC | `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/analytics.readonly` |
+| You have an OAuth Desktop client JSON and a working browser | OAuth Desktop flow | `export GOOGLE_SEO_OAUTH_CLIENT_FILE=/path/to/client.json` |
 
-> **Don't blindly run `gcloud auth application-default login` if any of these apply**: your shell is non-interactive (Claude Code, agents, CI), the OAuth client is unverified for sensitive scopes (you'll hit "App is blocked"), you're on a server without a browser, or you're working with multiple clients on the same Mac (account rotation drift). **Skip straight to Service Account** — see [Service Account setup](#service-account-setup-recommended-for-headless--multi-client) below.
+> **Recommended default is Service Account.** It's the only method that survives across all environments: no token expiration, no consent screen, no "App is blocked" issues, no reconsent every few weeks when Google revokes inactive tokens, no browser. The `gcloud` flow that the Google docs lead with is fragile in real production. Detailed walkthrough: [Service Account setup](#service-account-setup-recommended-default).
 
 If something fails on first call (`invalid_grant`, `App is blocked`, empty results, permission denied) jump to [Troubleshooting](#troubleshooting) — every common error has a documented fix.
 
@@ -335,26 +335,13 @@ This MCP started as a security-audited synthesis of seven open-source projects �
 ## Authentication
 
 The MCP supports three credential methods. The cascade order in `auth.py` is:
-**ADC → Service Account → OAuth Desktop flow**. Set the env var corresponding to the method you choose; the others can be unset.
+**ADC (`GOOGLE_APPLICATION_CREDENTIALS`) → Service Account (`GOOGLE_SEO_SERVICE_ACCOUNT_FILE`) → OAuth Desktop flow**. Set the env var corresponding to the method you choose; **leave the others unset** so the cascade picks the right one.
 
-### ADC — Application Default Credentials
+> **Important about the cascade order**: ADC is checked first because it's gcloud's default and exists implicitly on most developer machines. If you have BOTH `GOOGLE_APPLICATION_CREDENTIALS` (or a stale `~/.config/gcloud/application_default_credentials.json`) AND a working SA, the cascade tries ADC first. Since v0.7.3 it auto-validates the ADC refresh token and silently falls through to the SA if revoked — but it's cleaner to **unset `GOOGLE_APPLICATION_CREDENTIALS` and remove the stale ADC file when running on Service Account**, so you skip a network round-trip on every cold start.
 
-Best for: a single user on a laptop with a working browser.
+### Service Account setup (recommended default)
 
-```bash
-gcloud auth application-default login \
-  --scopes=https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/analytics.readonly
-```
-
-The authenticated Google account must be a verified user in **both**:
-- **Search Console** for each property (Property → Settings → Users and permissions)
-- **Analytics 4** for each property (Admin → Property → Property Access Management)
-
-**Known limitations**: requires interactive browser, OAuth client must be either fully verified by Google or include your email as test user. ADC tokens get revoked silently after periods of inactivity. **If you hit `invalid_grant` or `This app is blocked` while running this, switch to Service Account** — see below.
-
-### Service Account setup (recommended for headless / multi-client)
-
-Best for: VPS, CI, agent IA, multi-client agencies, anything non-interactive. **No browser, no token expiration, no consent screen issues.** This is the production-grade option.
+Best for: anything that isn't an interactive desktop session. **No browser, no token expiration, no consent screen issues, no reconsent every few weeks.** This is the production-grade option.
 
 **Step 1 — Create the Service Account in Google Cloud Console**
 
@@ -388,8 +375,17 @@ gcloud services enable \
 
 The SA email behaves like a user. Add it explicitly to each property you want to access:
 
+- **GA4** (per property) — `https://analytics.google.com` → Admin → Property → **Property Access Management** → **+** (top right) → **Add user** → SA email → role **Viewer**. Works straight from the UI.
+
 - **Search Console** (per site) — `https://search.google.com/search-console` → Settings (gear icon) → **Users and permissions** → **Add user** → paste the SA email → permission **Restricted** (read-only) or **Full**.
-- **GA4** (per property) — `https://analytics.google.com` → Admin → Property → **Property Access Management** → **+** (top right) → **Add user** → SA email → role **Viewer**.
+
+> ⚠️ **Search Console + Service Account: Google's UI may reject the SA email** with "user not found" or similar. This is a known Google quirk — GSC's user picker validates that the email belongs to a Google identity that has logged into Google products, which a service account never does. Three workarounds, in order of preference:
+>
+> 1. **Use a Domain-wide Delegation SA** (Google Workspace customers only) — set up DwD in Cloud Console + Workspace admin and the SA can impersonate a real user.
+> 2. **Add the SA as a verified property owner via DNS or HTML file verification** — works for any account, but you need DNS/file access. Add a TXT record `google-site-verification=...` keyed to the SA email. Once verified the SA gets owner-level access.
+> 3. **Use a different SA that is already verified for the property** (common in agencies that have a "house" SA per client).
+>
+> If you hit the `gsc_list_sites` empty-list problem after granting permissions and it persists for >5 minutes (GSC user grants take time to propagate), this is the most likely root cause. Check the [Google Cloud documentation on SA + GSC](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing#service-account) for the exact verification flow.
 
 For multi-client agencies, this is one-time per client. Subsequent property additions just need this single email added.
 
@@ -427,7 +423,28 @@ Run gsc_list_sites and ga4_list_properties.
 
 You should see all properties where the SA email was granted access.
 
-> **Important**: if you also have `GOOGLE_APPLICATION_CREDENTIALS` set or a stale `~/.config/gcloud/application_default_credentials.json` file, the cascade tries ADC **first** and may fail with `invalid_grant` before reaching the SA. Either unset the env var or rename the ADC file: `mv ~/.config/gcloud/application_default_credentials.json{,.bak}`.
+> **Important**: if you also have `GOOGLE_APPLICATION_CREDENTIALS` set or a stale `~/.config/gcloud/application_default_credentials.json` file, the cascade tries ADC **first** and tries to refresh it on every cold start. Since v0.7.3 it auto-falls-through to the SA if the ADC refresh token is revoked, but the cleaner setup is to **unset `GOOGLE_APPLICATION_CREDENTIALS` and rename the stale ADC file**: `mv ~/.config/gcloud/application_default_credentials.json{,.bak}`. That skips the network round-trip entirely.
+
+### ADC — Application Default Credentials
+
+Best for: a single developer on a desktop with a working browser and an OAuth client that's either fully verified by Google or whose consent screen lists your email as test user.
+
+```bash
+gcloud auth application-default login \
+  --scopes=https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/analytics.readonly
+```
+
+The authenticated Google account must be a verified user in **both**:
+- **Search Console** for each property (Property → Settings → Users and permissions)
+- **Analytics 4** for each property (Admin → Property → Property Access Management)
+
+**Known limitations**:
+- Requires interactive browser (won't work in Claude Code shells, agents, CI).
+- OAuth client must be either fully App-Verified by Google or include your email as test user (max 100 lifetime test users in External + Testing mode).
+- Refresh tokens get silently revoked by Google after periods of inactivity, security policy changes, or cross-machine reuse.
+- Workspace-managed accounts often have admin policy that blocks unverified apps entirely with "This app is blocked".
+
+If any of those bite you, **switch to a Service Account** — that's why it's the recommended default.
 
 ### OAuth Desktop flow (interactive)
 
@@ -447,9 +464,18 @@ The first call opens a browser; the token is cached at `~/Library/Application Su
 
 Your ADC refresh token has been revoked by Google (common after periods of inactivity, security policy changes, or if you authenticated with the same client across multiple machines).
 
-**Fix**: switch to a Service Account (see above). It eliminates token expiration entirely. Don't waste time re-running `gcloud auth application-default login` — the underlying OAuth client may be flagged for blocking.
+**Since v0.7.3 this should auto-recover** if you have a Service Account configured: the cascade detects the dead refresh token and silently falls through to `GOOGLE_SEO_SERVICE_ACCOUNT_FILE`. You'll see a warning in the logs. **If you still see the raw `invalid_grant` error**, it means there's no SA fallback configured — set one up.
+
+**Fix**: switch to a Service Account ([Service Account setup](#service-account-setup-recommended-default)). It eliminates token expiration entirely. Don't waste time re-running `gcloud auth application-default login` — the underlying OAuth client may be flagged for blocking.
 
 If you still want to retry ADC: `gcloud auth application-default revoke && gcloud auth application-default login --scopes=...`
+
+**Cleanest setup once you've migrated to SA**: unset `GOOGLE_APPLICATION_CREDENTIALS` and rename the stale ADC file:
+```bash
+unset GOOGLE_APPLICATION_CREDENTIALS  # in your shell config
+mv ~/.config/gcloud/application_default_credentials.json{,.bak}
+```
+This skips the ADC validation round-trip on every cold start.
 
 ### `This app is blocked — This app tried to access sensitive info in your Google Account.`
 
@@ -474,9 +500,23 @@ The authenticated identity (your Google account or the SA email) doesn't have ac
 
 ### `gsc_list_sites` returns an empty list
 
-Same reason for GSC. Each site has its own ACL.
+The auth identity has no access to any GSC site, OR you tried to add a Service Account email and Google Search Console rejected it.
 
+**Common case A — using ADC / OAuth**: each site has its own ACL.
 **Fix**: `https://search.google.com/search-console` → site → Settings → Users and permissions → **Add user** → grant Restricted or Full to the auth identity.
+
+**Common case B — using Service Account**: GSC's "Add user" UI may reject the SA email with "user not found". This is a Google quirk: SA emails can't be added through the user picker because they've never logged into Google products. Three workarounds:
+
+1. **Domain-wide Delegation** (Google Workspace customers only) — set up DwD in Cloud Console + Workspace admin so the SA can impersonate a real user.
+2. **Verify the SA as a property owner via DNS or HTML file**:
+   - Add a `TXT` record `google-site-verification=<token>` to your domain.
+   - The token is generated when you start the verification flow with the SA credentials, NOT through the GSC UI. Use the [GSC Site Verification API](https://developers.google.com/site-verification/v1/getting_started).
+   - Once verified, the SA gets owner-level access automatically.
+3. **Reuse a SA already verified for the property** (common in agencies — one "house" SA per client domain).
+
+After granting permissions, GSC user grants can take 5-15 minutes to propagate. If `gsc_list_sites` is still empty after that, double-check using the GSC UI — log into `https://search.google.com/search-console` as the SA email (you can't, that's the point) OR check the property's "Users and permissions" list to see whether the SA email appears there.
+
+Reference: [Google docs on SA + GSC authorization](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing#service-account).
 
 ### `403 PERMISSION_DENIED — Google Analytics Admin API has not been used in project X`
 
@@ -557,14 +597,16 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `GOOGLE_APPLICATION_CREDENTIALS` | gcloud ADC default | ADC file path |
-| `GOOGLE_SEO_OAUTH_CLIENT_FILE` | — | Desktop OAuth client JSON |
-| `GOOGLE_SEO_SERVICE_ACCOUNT_FILE` | — | Service account key path |
-| `GSC_ALLOW_DESTRUCTIVE` | `false` | Enables sitemap submission and write-scope OAuth |
-| `GSC_CTR_BENCHMARKS` | conservative defaults | Comma-separated 10 floats overriding per-position expected CTR |
+| `GOOGLE_APPLICATION_CREDENTIALS` | gcloud ADC default | ADC file path. Set this **only** if you're explicitly using ADC. The cascade tries it first, so leaving a stale value here makes every cold start slower (one extra refresh round-trip) and triggers a warning log. |
+| `GOOGLE_SEO_OAUTH_CLIENT_FILE` | — | Desktop OAuth client JSON. Triggers interactive browser flow on first call. |
+| `GOOGLE_SEO_SERVICE_ACCOUNT_FILE` | — | Service account key path. **Recommended default**. Self-issued JWTs, no expiration, works headless. |
+| `GOOGLE_PROJECT_ID` | — | **Optional, fingerprint-only**. Used exclusively as part of the credentials fingerprint that detects multi-tenant rotation between calls. **It does NOT route requests to a specific GCP project** — the actual project is inferred from the active credential (the SA's own JSON, or the ADC's `quota_project_id`). Leaving it empty is fine. Setting it wrong does NOT break anything (the credential still works); it just slightly degrades the fingerprint's ability to detect account rotation. If you swap your SA file to one in a different GCP project, the fingerprint changes anyway via the file's `mtime`. |
+| `GOOGLE_SEO_ALLOW_PRIVATE_FETCH` | `false` | If `true`, the SSRF guard accepts RFC1918 / loopback / cloud-metadata URLs in `fetch_url` family tools. Use only on trusted intranets. |
+| `GSC_ALLOW_DESTRUCTIVE` | `false` | Enables sitemap submission and write-scope OAuth. |
+| `GSC_CTR_BENCHMARKS` | conservative defaults | Comma-separated 10 floats overriding per-position expected CTR. |
 | `PAGESPEED_API_KEY` | — | API key for Lighthouse/PSI **and** CrUX. Without it, the anonymous quota is shared and frequently 429-throttled. Create one at [console.cloud.google.com](https://console.cloud.google.com) — enable PageSpeed Insights API + Chrome UX Report API, then create an API key restricted to those two services. The same key works for both. |
-| `CRUX_API_KEY` | (falls back to `PAGESPEED_API_KEY`) | Alternative if you prefer separate keys |
-| `GOOGLE_SEO_LOG_LEVEL` | `INFO` | Python log level |
+| `CRUX_API_KEY` | (falls back to `PAGESPEED_API_KEY`) | Alternative if you prefer separate keys. |
+| `GOOGLE_SEO_LOG_LEVEL` | `INFO` | Python log level. |
 
 ## Design principles
 

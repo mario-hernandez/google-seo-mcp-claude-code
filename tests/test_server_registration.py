@@ -6,8 +6,10 @@ from google_seo_mcp.server import mcp
 
 def test_tool_count():
     tools = list(mcp._tool_manager.list_tools())
-    # 12 GSC + 13 GA4 + 6 cross + 5 LH + 3 CrUX + 3 Schema + 5 Idx + 5 Trends + 2 meta = 54
-    assert len(tools) == 78, f"Expected 78 tools, got {len(tools)}"
+    # 12 GSC + 14 GA4 + 6 cross + 5 LH + 3 CrUX + 3 Schema + 5 Idx + 5 Trends +
+    # 21 migration + 2 AEO + 3 meta (get_capabilities, reload_credentials,
+    # reauthenticate alias) = 79
+    assert len(tools) == 79, f"Expected 79 tools, got {len(tools)}"
 
 
 def test_tool_names_have_expected_prefixes():
@@ -25,19 +27,22 @@ def test_tool_names_have_expected_prefixes():
     assert sum(1 for t in tools if t.startswith("ga4_")) == 14
     assert sum(1 for t in tools if t.startswith("cross_")) == 6
     assert "get_capabilities" in tools
-    assert "reauthenticate" in tools
+    assert "reload_credentials" in tools
+    assert "reauthenticate" in tools  # deprecated alias kept for backward-compat
 
 
 def test_diagnostic_tools_have_guardrail_suffix():
     """Every registered _diagnostic_ tool (gsc_/ga4_/cross_) must include the suffix.
 
-    Meta tools (get_capabilities, reauthenticate) are registered with @mcp.tool()
-    directly without going through `_register`, so they don't carry the suffix —
-    that's intentional since they don't return user-facing data.
+    Meta tools (get_capabilities, reload_credentials, reauthenticate) are
+    registered with @mcp.tool() directly without going through `_register`,
+    so they don't carry the suffix — that's intentional since they don't
+    return user-facing data.
     """
     suffix_marker = "Use ONLY the data returned by this tool"
+    META_TOOLS = {"get_capabilities", "reload_credentials", "reauthenticate"}
     for tool in mcp._tool_manager.list_tools():
-        if tool.name in {"get_capabilities", "reauthenticate"}:
+        if tool.name in META_TOOLS:
             continue
         desc = tool.description or ""
         assert suffix_marker in desc, f"Tool {tool.name} missing guardrail suffix"
