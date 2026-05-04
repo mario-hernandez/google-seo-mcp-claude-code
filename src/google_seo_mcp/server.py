@@ -44,10 +44,14 @@ from .gsc.tools import analytics as gsc_analytics
 from .gsc.tools import intelligence as gsc_intel
 from .gsc.tools import sitemaps as gsc_sitemaps
 from .gsc.tools import sites as gsc_sites
+from .history import tools as history_tools
 from .indexing import tools as indexing_tools
 from .lighthouse import tools as lh_tools
+from .logs import tools as logs_tools
+from .migration import crawl_advanced as migration_crawl_advanced
 from .migration import tools as migration_tools
 from .schema import tools as schema_tools
+from .serp import tools as serp_tools
 from .trends import tools as trends_tools
 from .guardrails import GUARDRAIL_SUFFIX
 from .resources.google_algorithm_updates import algorithm_updates_text
@@ -245,6 +249,30 @@ def _ai_bots_robots(origin_url: str, sample_path: str = "/") -> dict:
 
 _register(_llms_txt_check, name="aeo_llms_txt_check")
 _register(_ai_bots_robots, name="aeo_ai_bots_robots_audit")
+
+# v0.8.0 — Persistence (history/), SERP intelligence (DataForSEO),
+# server log analysis, advanced technical crawl
+_register(history_tools.history_save_snapshot, name="history_save_snapshot")
+_register(history_tools.history_diff,          name="history_diff")
+_register(history_tools.history_list,          name="history_list")
+
+_register(serp_tools.serp_check,                name="serp_check")
+_register(serp_tools.serp_aio_monitor,          name="serp_aio_monitor")
+_register(serp_tools.serp_paa_extractor,        name="serp_paa_extractor")
+_register(serp_tools.serp_competitor_intersect, name="serp_competitor_intersect")
+
+_register(logs_tools.logs_parse,                  name="logs_parse")
+_register(logs_tools.logs_googlebot_crawl_budget, name="logs_googlebot_crawl_budget")
+_register(logs_tools.logs_bot_ratio,              name="logs_bot_ratio")
+_register(logs_tools.logs_spider_trap_detector,   name="logs_spider_trap_detector")
+_register(logs_tools.logs_crawl_waste,            name="logs_crawl_waste")
+_register(logs_tools.logs_status_distribution,    name="logs_status_distribution")
+_register(logs_tools.logs_verify_googlebot_ip,    name="logs_verify_googlebot_ip")
+
+_register(migration_crawl_advanced.crawl_redirect_chains,        name="migration_redirect_chains")
+_register(migration_crawl_advanced.check_broken_internal_links,  name="migration_broken_internal_links")
+_register(migration_crawl_advanced.measure_response_times,       name="migration_response_times")
+_register(migration_crawl_advanced.check_image_alt_coverage,     name="migration_image_alt_coverage")
 
 
 # ─── MCP Resource: Google algorithm updates reference ────────

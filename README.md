@@ -21,7 +21,7 @@
 
 > Stop running two MCPs. Stop pasting reports into ChatGPT. Connect both Google Search Console and Google Analytics 4 to Claude as native tools — with the cross-platform diagnostics that actually matter for SEO: which pages would convert if they ranked higher, which queries pay, where tracking is broken, and what the full journey looks like from organic click to revenue.
 
-> **v0.7.1** — multi-client production hardening. Four senior SEO panels (14 reviewers) audited the codebase and the team fixed every P0 / P1 they raised. Account rotation between clients no longer leaks data, GA4 empty values no longer crash tools, the auth singletons are thread-safe with atomic token writes, advertools/Scrapy can no longer corrupt the JSON-RPC channel, and `_meta` provenance now coerces datetime / Decimal / set / Path / numpy scalars into JSON-safe primitives. **78 tools, 92 regression tests, 0 known crashes, multi-tenant safe.** See [`CHANGELOG.md`](CHANGELOG.md) for the line-by-line trail.
+> **v0.8.0** — four new modules (history persistence, SERP intelligence via DataForSEO, server log analysis, advanced technical crawl) bring the catalog to **97 tools**. v0.7.x stability and multi-client hardening preserved. **97 tools, 92 regression tests, 0 known crashes, multi-tenant safe, Service Account first-class.** See [`CHANGELOG.md`](CHANGELOG.md) for the line-by-line trail.
 
 <p align="center">
   <img src="docs/why-unified.png" alt="Two isolated MCP servers vs one unified MCP — unified unlocks cross-platform tools (journey, opportunity matrix, traffic health check)" width="100%">
@@ -69,7 +69,7 @@ Real prompts that fire real tool sequences (full playbook list in [`AGENTS.md`](
 
 ## What you actually get
 
-**78 tools + 1 reference resource** across ten categories. Six of them are impossible without unified GSC+GA4 auth; the rest stitch in Lighthouse, CrUX, Schema validation, IndexNow, Google Trends/Suggest/Alerts, full WordPress→JS migration tooling, AEO (`llms.txt` + AI bot policy), and crawl-budget audits — the SEO swiss knife in one binary, no SaaS subscription needed for the 95% case.
+**97 tools + 1 reference resource** across ten categories. Six of them are impossible without unified GSC+GA4 auth; the rest stitch in Lighthouse, CrUX, Schema validation, IndexNow, Google Trends/Suggest/Alerts, full WordPress→JS migration tooling, AEO (`llms.txt` + AI bot policy), and crawl-budget audits — the SEO swiss knife in one binary, no SaaS subscription needed for the 95% case.
 
 - 🔄 **Cross-platform tools that nobody else has** — the whole reason this exists. `gsc_to_ga4_journey` traces an organic click to its conversion. `opportunity_matrix` scores pages by *both* "could rank higher" AND "would convert if it did". `traffic_health_check` detects when GSC and GA4 disagree (broken tracking). `seo_to_revenue_attribution` tells you which queries actually pay (with a 50% confidence band, not as a measurement).
 - 🩺 **Diagnoses, not data dumps** — `gsc_traffic_drops` classifies pages as `ranking_loss` / `ctr_collapse` / `demand_decline` / `disappeared`. `ga4_traffic_drops_by_channel` classifies channels as `volume_loss` / `engagement_decay` / `conversion_decay` / `bounce_surge`. Multi-axis taxonomy improved over the existing OSS competitors.
@@ -129,7 +129,7 @@ Ask Claude: *"Is the tracking healthy on example.com?"*
 
 Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal because GSC counts every search-result-click while GA4 counts unique sessions (some users navigate away before analytics fires). Both periods are aligned to GSC's 3-day reporting lag so the comparison is apples-to-apples — the LLM can quote exact dates without making them up.
 
-## All 78 tools
+## All 97 tools
 
 11 categories. Bold counts — verified against `mcp._tool_manager.list_tools()` on the v0.7.1 release.
 
@@ -314,7 +314,7 @@ The OSS landscape has split GSC and GA4 into separate MCPs. This one unifies the
 | [**`Suganthan-Mohanadasan/Suganthans-GSC-MCP`**](https://github.com/Suganthan-Mohanadasan/Suganthans-GSC-MCP) (TypeScript) | Maximum tool surface for GSC alone. No GA4 integration. |
 | [**`saurabhsharma2u/search-console-mcp`**](https://github.com/saurabhsharma2u/search-console-mcp) (TypeScript) | The closest competitor: GSC + GA4 + Bing in 90+ tools. Pick if you live in TypeScript or need Bing. Z-score baseline contamination, fake funnel, no `_meta` provenance. |
 | [**`surendranb/google-analytics-mcp`**](https://github.com/surendranb/google-analytics-mcp) (Python) | Schema-discovery + row-count-probe for raw GA4. Single-property only, no diagnostic logic, no GSC. |
-| **This MCP** | **The unified Python SEO swiss-knife: GSC + GA4 + 6 unique cross-platform tools + Lighthouse/PSI + CrUX + Schema validation + IndexNow/Google Indexing + Google Trends/Suggest/Alerts. 78 tools, anti-hallucination provenance on every response, leave-one-out Z-score, real funnels, read-only-by-default.** Pick if you want one binary to cover the whole audit-to-action loop without paying SaaS for what's just a free Google API away. |
+| **This MCP** | **The unified Python SEO swiss-knife: GSC + GA4 + 6 unique cross-platform tools + Lighthouse/PSI + CrUX + Schema validation + IndexNow/Google Indexing + Google Trends/Suggest/Alerts + DataForSEO SERP + server log analysis + persistence. 97 tools, anti-hallucination provenance on every response, leave-one-out Z-score, real funnels, read-only-by-default.** Pick if you want one binary to cover the whole audit-to-action loop without paying SaaS for what's just a free Google API away. |
 
 This MCP started as a security-audited synthesis of seven open-source projects — credits at the bottom.
 
@@ -606,6 +606,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 | `GSC_CTR_BENCHMARKS` | conservative defaults | Comma-separated 10 floats overriding per-position expected CTR. |
 | `PAGESPEED_API_KEY` | — | API key for Lighthouse/PSI **and** CrUX. Without it, the anonymous quota is shared and frequently 429-throttled. Create one at [console.cloud.google.com](https://console.cloud.google.com) — enable PageSpeed Insights API + Chrome UX Report API, then create an API key restricted to those two services. The same key works for both. |
 | `CRUX_API_KEY` | (falls back to `PAGESPEED_API_KEY`) | Alternative if you prefer separate keys. |
+| `DATAFORSEO_LOGIN` | — | Required only by the `serp_*` tools. Sign up at [dataforseo.com](https://dataforseo.com) (pay-as-you-go, ~$0.0006 per Live SERP call). Tools fail gracefully (no exception) when credentials absent — they return `{"error": "credentials_missing", "fix": ...}`. |
+| `DATAFORSEO_PASSWORD` | — | Pair with `DATAFORSEO_LOGIN`. Store in macOS Keychain or your secrets manager rather than `.env` files. |
+| `GOOGLE_SEO_HISTORY_DIR` | `~/.google-seo-mcp/history` | Filesystem location where `history_save_snapshot` writes per-client snapshots. Override if you want them on a synced drive (iCloud, Dropbox) for cross-device continuity. |
 | `GOOGLE_SEO_LOG_LEVEL` | `INFO` | Python log level. |
 
 ## Design principles

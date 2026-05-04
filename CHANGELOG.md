@@ -4,6 +4,104 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-05-04
+
+### Four new modules: persistence, SERP intelligence, server log analysis, advanced technical crawl
+
+This is the largest tool surface bump in the project's history: **18 new
+tools across 4 new modules**, taking the catalog from 79 → 97. All new
+modules follow the same `_meta` provenance contract, anti-hallucination
+guardrails, and cascade-aware authentication as the existing tools.
+Read-only by default. Service Account authentication supported across
+the board.
+
+### Added — `history/` module (3 tools, free)
+
+Turns one-shot queries into a longitudinal monitor. Persists tool outputs
+to a per-client filesystem store (`~/.google-seo-mcp/history/`) and
+diffs them across snapshots so the agent can answer "what changed since
+last week?" without re-running the analysis.
+
+- `history_save_snapshot` — persist any tool output (typically
+  `gsc_site_snapshot`, `cross_traffic_health_check`, `cross_opportunity_matrix`)
+  to a per-client filesystem store. Idempotent, content-hashed.
+- `history_diff` — compare two snapshots, classify field changes, emit
+  alerts on critical drops (clicks, impressions, position).
+- `history_list` — enumerate stored snapshots per client / tool.
+
+### Added — `serp/` module (4 tools, DataForSEO-backed)
+
+Direct SERP queries to confirm AI Overview presence, People Also Ask,
+featured snippets, and competitor intersection — the layer that pure
+GSC + GA4 cannot reach. Requires `DATAFORSEO_LOGIN` and
+`DATAFORSEO_PASSWORD` env vars. Pay-as-you-go (~\$0.0006 per Live SERP
+call); ~\$0.20 / year for a typical small client doing monthly audits.
+Tools degrade gracefully (no exception, returns
+`{"error": "credentials_missing", "fix": ...}`) when credentials absent.
+
+- `serp_check` — single Live SERP query, returns organic + AI Overview
+  + PAA + featured snippet + sitelinks.
+- `serp_aio_monitor` — batch of queries → which have AI Overview now.
+  Use to confirm whether a CTR-collapsing query is being eaten by AIO.
+- `serp_paa_extractor` — extract PAA questions to inform FAQPage schema
+  authoring.
+- `serp_competitor_intersect` — top 10 organic competitors for a query
+  and where your domain ranks within it.
+
+### Added — `logs/` module (7 tools, free)
+
+Server-side access log analysis. Parses NCSA Combined / JSON / Cloudflare
+Logpush from local files; cross-references with GSC sitemaps to surface
+crawl waste; verifies Googlebot IPs via official ranges + reverse DNS.
+This is the layer GSC URL Inspection cannot reach — "what is Googlebot
+*actually* fetching, at what frequency, and what fraction returns 5xx?"
+
+- `logs_parse` — parse a log file (Combined / JSON / Cloudflare) into
+  normalized rows. Auto-detects format by default.
+- `logs_googlebot_crawl_budget` — per-URL Googlebot fetch frequency
+  + status code distribution.
+- `logs_bot_ratio` — Googlebot vs Bingbot vs other-bots vs human ratios.
+- `logs_spider_trap_detector` — URLs hit excessively (default >100×)
+  by any single bot — likely a faceted-search trap or session-id leak.
+- `logs_crawl_waste` — URLs Googlebot fetches that are NOT in any
+  configured sitemap. Classic finding for "stop crawling the search
+  page, it's eating budget".
+- `logs_status_distribution` — 2xx / 3xx / 4xx / 5xx breakdown by
+  bot identity.
+- `logs_verify_googlebot_ip` — checks an IP against Google's
+  published JSON ranges + does forward+reverse DNS validation.
+  Catches User-Agent spoofers.
+
+### Added — `migration/crawl_advanced.py` (4 tools)
+
+Pre-cutover technical audit: redirect chain depth, broken internal
+links, response-time distribution, image alt coverage. Used in tandem
+with the existing migration tools when the migration is complex enough
+to need pre-flight assurance beyond the usual sitemap diff.
+
+- `migration_redirect_chains` — for a list of URLs, return the full
+  301/302 chain depth. Flags chains > 2 hops (Googlebot drops at 5).
+- `migration_broken_internal_links` — crawls a homepage one level
+  deep and reports any internal `<a href>` returning 4xx/5xx.
+- `migration_response_times` — p50 / p95 / p99 server response time
+  per URL. Sample-based.
+- `migration_image_alt_coverage` — fraction of `<img>` tags missing
+  `alt`. Per-page and aggregated across the crawl.
+
+### Tool count: 79 → 97 (+18)
+
+### Tests
+92/92 pass. `test_tool_count` updated 79 → 97.
+
+### Backward compatibility
+All v0.7.x tools and behaviors unchanged. New env vars are opt-in:
+- `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` — required only if you
+  use any `serp_*` tool. Tools fail gracefully (no exception) if absent.
+- `GOOGLE_SEO_HISTORY_DIR` — overrides the default
+  `~/.google-seo-mcp/history/` location for `history_*`.
+
+---
+
 ## [0.7.4] — 2026-05-04
 
 ### `get_capabilities` now exposes `mcp_version` and `credential_type`
