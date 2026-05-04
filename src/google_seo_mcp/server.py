@@ -11,8 +11,23 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from mcp.server.fastmcp import FastMCP
+
+
+def _resolve_mcp_version() -> str:
+    """Returns the installed `google-seo-mcp` package version, or 'unknown'.
+
+    Used by `get_capabilities` so the operator can verify which version
+    the MCP process actually loaded into memory — independent of what
+    `pip show` reports (which only reflects metadata at install time
+    and lies for editable installs after a code update without reinstall).
+    """
+    try:
+        return _pkg_version("google-seo-mcp")
+    except PackageNotFoundError:
+        return "unknown (not installed as a package)"
 
 from . import auth as auth_module
 from .crossplatform import attribution as cp_attr
@@ -280,6 +295,10 @@ def get_capabilities() -> dict:
 
     Returns the tool catalog grouped by category, plus a quick check of whether
     credentials are reachable for both Google Search Console and Google Analytics 4.
+
+    Also returns `mcp_version` and `credential_type` so the operator can verify
+    which version is actually loaded in memory and which auth method is active —
+    independent of what external tooling (pip show, env files) reports.
     """
     gsc_ok = True
     ga4_ok = True
@@ -298,9 +317,11 @@ def get_capabilities() -> dict:
         ga4_err = str(e)[:200]
 
     return {
+        "mcp_version": _resolve_mcp_version(),
         "auth": {
             "gsc": {"ok": gsc_ok, "error": gsc_err},
             "ga4": {"ok": ga4_ok, "error": ga4_err},
+            "credential_type": auth_module.current_credential_type(),
             "destructive_enabled": os.getenv("GSC_ALLOW_DESTRUCTIVE") == "true",
         },
         "categories": {

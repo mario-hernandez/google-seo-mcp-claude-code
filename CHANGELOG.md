@@ -4,6 +4,48 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] — 2026-05-04
+
+### `get_capabilities` now exposes `mcp_version` and `credential_type`
+
+Triggered by a real-world papercut during the v0.7.3 rollout: an operator
+reinstalled an editable venv after a `git pull` and `pip show` reported
+the OLD version (0.7.0) because metadata is cached at install time. The
+operator had no in-band way to verify which version of the code the MCP
+process was actually executing in memory.
+
+### Added
+
+- **`get_capabilities` returns `mcp_version`**. Resolved at runtime via
+  `importlib.metadata.version("google-seo-mcp")`. Returns
+  `"unknown (not installed as a package)"` if the package isn't
+  resolvable. Lets agents and operators verify in-band — no `pip show`,
+  no checking the binary path with `ps aux`, no guessing.
+
+- **`get_capabilities.auth` now includes `credential_type`**. Mirrors
+  the cascade order in `auth.py` so callers can confirm which method is
+  active (`'service_account'` / `'adc'` / `'oauth_flow'` / `'none'`).
+  Same value also returned by `reload_credentials`.
+
+### Why this matters operationally
+
+Editable installs (`pip install -e .`) execute code directly from the
+source path, so the live MCP process runs whatever's currently on disk.
+But `pip show` reads the wheel metadata cached at install time, which
+diverges as soon as you `git pull` without reinstalling. The new
+`mcp_version` field reads the metadata fresh on every `get_capabilities`
+call, eliminating the divergence as a source of confusion.
+
+### Tests
+92/92 pass. No new test required — the field is a pure read of
+`importlib.metadata`.
+
+### Backward compatibility
+`get_capabilities` schema is additive (new fields, no removals). All
+existing callers keep working.
+
+---
+
 ## [0.7.3] — 2026-05-04
 
 ### Auth UX hardening based on real-world setup feedback
