@@ -33,17 +33,27 @@
 # 1. Install (Python 3.11+)
 pipx install git+https://github.com/mario-hernandez/google-seo-mcp-claude-code
 
-# 2. Authenticate ONCE for both APIs (one-time, opens browser)
-gcloud auth application-default login \
-  --scopes=https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/analytics.readonly
-
-# 3. Add to Claude Code
+# 2. Add to Claude Code
 claude mcp add google-seo-mcp -- $(which google-seo-mcp)
+
+# 3. Authenticate — choose ONE method (see decision matrix below)
 ```
 
 Then ask Claude: *"List all my GSC sites and GA4 properties, then run the opportunity matrix for example.com to surface pages where ranking up would also convert."*
 
 Works with **Claude Code**, **Claude Desktop**, **Cursor**, **Windsurf**, and any other MCP-compatible client.
+
+### Pick your auth method (this matters)
+
+| If you are… | Use this | One-line setup |
+|-------------|----------|----------------|
+| **Single user on your laptop** | ADC (default) | `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/analytics.readonly` |
+| **Headless server, CI, agent IA, multi-client agency, anything that can't open a browser** | **Service Account** ✅ recommended | Create a SA JSON in Cloud Console → grant the SA email read access on each GSC site + GA4 property → `export GOOGLE_SEO_SERVICE_ACCOUNT_FILE=/path/to/sa.json` |
+| **You don't have access to a Google Cloud project but have an OAuth Desktop client JSON** | OAuth Desktop flow | `export GOOGLE_SEO_OAUTH_CLIENT_FILE=/path/to/client.json` |
+
+> **Don't blindly run `gcloud auth application-default login` if any of these apply**: your shell is non-interactive (Claude Code, agents, CI), the OAuth client is unverified for sensitive scopes (you'll hit "App is blocked"), you're on a server without a browser, or you're working with multiple clients on the same Mac (account rotation drift). **Skip straight to Service Account** — see [Service Account setup](#service-account-setup-recommended-for-headless--multi-client) below.
+
+If something fails on first call (`invalid_grant`, `App is blocked`, empty results, permission denied) jump to [Troubleshooting](#troubleshooting) — every common error has a documented fix.
 
 ## Questions you can actually ask
 
@@ -324,7 +334,12 @@ This MCP started as a security-audited synthesis of seven open-source projects �
 
 ## Authentication
 
-### Default — Application Default Credentials (recommended)
+The MCP supports three credential methods. The cascade order in `auth.py` is:
+**ADC → Service Account → OAuth Desktop flow**. Set the env var corresponding to the method you choose; the others can be unset.
+
+### ADC — Application Default Credentials
+
+Best for: a single user on a laptop with a working browser.
 
 ```bash
 gcloud auth application-default login \
@@ -335,18 +350,88 @@ The authenticated Google account must be a verified user in **both**:
 - **Search Console** for each property (Property → Settings → Users and permissions)
 - **Analytics 4** for each property (Admin → Property → Property Access Management)
 
-<details>
-<summary><b>Advanced auth methods</b> — Service account / OAuth flow</summary>
+**Known limitations**: requires interactive browser, OAuth client must be either fully verified by Google or include your email as test user. ADC tokens get revoked silently after periods of inactivity. **If you hit `invalid_grant` or `This app is blocked` while running this, switch to Service Account** — see below.
 
-### Service account (headless servers)
+### Service Account setup (recommended for headless / multi-client)
+
+Best for: VPS, CI, agent IA, multi-client agencies, anything non-interactive. **No browser, no token expiration, no consent screen issues.** This is the production-grade option.
+
+**Step 1 — Create the Service Account in Google Cloud Console**
+
+1. Open `https://console.cloud.google.com/iam-admin/serviceaccounts?project=YOUR_PROJECT_ID` (use any GCP project where you have Owner/Editor access — APIs are billed to this project).
+2. **Create Service Account**:
+   - Name: `google-seo-mcp-readonly`
+   - Description: "Read-only access to GSC + GA4 for the SEO MCP"
+   - **Grant no IAM roles** (GSC and GA4 don't use IAM, they use their own ACLs).
+3. Click the SA → **Keys** tab → **Add Key** → **Create new key** → **JSON** → Download.
+4. Move and lock down the file:
+   ```bash
+   mkdir -p ~/.config/gcloud
+   mv ~/Downloads/<your-project>-*.json ~/.config/gcloud/google-seo-mcp-sa.json
+   chmod 600 ~/.config/gcloud/google-seo-mcp-sa.json
+   ```
+5. Note the SA email — it has the format `google-seo-mcp-readonly@YOUR_PROJECT_ID.iam.gserviceaccount.com`.
+
+**Step 2 — Enable the required APIs in your project (one-time)**
 
 ```bash
-export GOOGLE_SEO_SERVICE_ACCOUNT_FILE=/path/to/sa-key.json
+gcloud services enable \
+  searchconsole.googleapis.com \
+  analyticsadmin.googleapis.com \
+  analyticsdata.googleapis.com \
+  --project=YOUR_PROJECT_ID
 ```
 
-The service account email must be added as a user in both GSC and GA4 for each property.
+(Or enable from the web: `https://console.cloud.google.com/apis/library/searchconsole.googleapis.com?project=YOUR_PROJECT_ID`.)
 
-### OAuth user flow (interactive)
+**Step 3 — Grant the SA access to each GSC site and GA4 property**
+
+The SA email behaves like a user. Add it explicitly to each property you want to access:
+
+- **Search Console** (per site) — `https://search.google.com/search-console` → Settings (gear icon) → **Users and permissions** → **Add user** → paste the SA email → permission **Restricted** (read-only) or **Full**.
+- **GA4** (per property) — `https://analytics.google.com` → Admin → Property → **Property Access Management** → **+** (top right) → **Add user** → SA email → role **Viewer**.
+
+For multi-client agencies, this is one-time per client. Subsequent property additions just need this single email added.
+
+**Step 4 — Configure the env var**
+
+In `~/.claude.json` (or your MCP client config), set:
+
+```json
+{
+  "mcpServers": {
+    "google-seo-mcp": {
+      "type": "stdio",
+      "command": "google-seo-mcp",
+      "env": {
+        "GOOGLE_SEO_SERVICE_ACCOUNT_FILE": "/Users/YOU/.config/gcloud/google-seo-mcp-sa.json"
+      }
+    }
+  }
+}
+```
+
+Or via shell:
+
+```bash
+export GOOGLE_SEO_SERVICE_ACCOUNT_FILE=~/.config/gcloud/google-seo-mcp-sa.json
+```
+
+**Step 5 — Restart your MCP client and verify**
+
+Quit the client fully (Cmd+Q in Claude Code, not just close window) and reopen. Then:
+
+```
+Run gsc_list_sites and ga4_list_properties.
+```
+
+You should see all properties where the SA email was granted access.
+
+> **Important**: if you also have `GOOGLE_APPLICATION_CREDENTIALS` set or a stale `~/.config/gcloud/application_default_credentials.json` file, the cascade tries ADC **first** and may fail with `invalid_grant` before reaching the SA. Either unset the env var or rename the ADC file: `mv ~/.config/gcloud/application_default_credentials.json{,.bak}`.
+
+### OAuth Desktop flow (interactive)
+
+Best for: developers running the MCP from a desktop terminal with a Google Cloud project where they don't want to provision a SA.
 
 ```bash
 export GOOGLE_SEO_OAUTH_CLIENT_FILE=/path/to/client_secret.json
@@ -354,7 +439,67 @@ export GOOGLE_SEO_OAUTH_CLIENT_FILE=/path/to/client_secret.json
 
 The first call opens a browser; the token is cached at `~/Library/Application Support/google-seo-mcp/token.json` (macOS) or the equivalent `XDG_CONFIG_HOME` location.
 
-</details>
+**Note**: requires the OAuth Desktop client to either be App-Verified by Google or to have your email registered as a test user in the OAuth consent screen. Otherwise you'll see "This app is blocked" — see [Troubleshooting](#troubleshooting).
+
+## Troubleshooting
+
+### `invalid_grant: Token has been expired or revoked.`
+
+Your ADC refresh token has been revoked by Google (common after periods of inactivity, security policy changes, or if you authenticated with the same client across multiple machines).
+
+**Fix**: switch to a Service Account (see above). It eliminates token expiration entirely. Don't waste time re-running `gcloud auth application-default login` — the underlying OAuth client may be flagged for blocking.
+
+If you still want to retry ADC: `gcloud auth application-default revoke && gcloud auth application-default login --scopes=...`
+
+### `This app is blocked — This app tried to access sensitive info in your Google Account.`
+
+Google blocks OAuth flows for clients that request sensitive scopes (`webmasters`, `analytics.readonly`) and are either unverified or whose verification has lapsed. Common with the default `gcloud` client and with custom OAuth Desktop clients in **External + Testing** consent mode.
+
+**Fix options** (best to worst):
+1. **Switch to Service Account** — bypasses OAuth entirely. This is the recommended path for any production / agent / multi-client workflow.
+2. **Add your email as test user** — Cloud Console → APIs & Services → OAuth consent screen → Audience → Test users → add your email. Limited to 100 test users lifecycle, only works in External + Testing.
+3. **Submit OAuth consent screen for verification** — Google's official path, takes weeks, not worth it for self-hosted SEO tooling.
+
+### `EOFError: EOF when reading a line` during `--no-browser` flow
+
+The `gcloud auth application-default login --no-browser` flow needs an interactive shell to paste the verification code. Claude Code, Cursor, agents, and CI shells are non-interactive — the prompt fails immediately.
+
+**Fix**: do not use OAuth flow in non-interactive environments. Use a Service Account.
+
+### `ga4_list_properties` returns an empty list
+
+The authenticated identity (your Google account or the SA email) doesn't have access to any GA4 property.
+
+**Fix**: open `https://analytics.google.com` → Admin → Property Access Management for each property, and explicitly grant the auth identity at least the **Viewer** role.
+
+### `gsc_list_sites` returns an empty list
+
+Same reason for GSC. Each site has its own ACL.
+
+**Fix**: `https://search.google.com/search-console` → site → Settings → Users and permissions → **Add user** → grant Restricted or Full to the auth identity.
+
+### `403 PERMISSION_DENIED — Google Analytics Admin API has not been used in project X`
+
+The GCP project hosting the auth identity (the project where the SA was created, or the project tied to your ADC) doesn't have the required APIs enabled.
+
+**Fix**:
+```bash
+gcloud services enable searchconsole.googleapis.com analyticsadmin.googleapis.com analyticsdata.googleapis.com --project=YOUR_PROJECT_ID
+```
+
+Or enable each from the web console.
+
+### Tools return data from the wrong client (multi-tenant)
+
+You rotated `gcloud` accounts or swapped the SA file but the MCP keeps returning data from the previous identity.
+
+**Fix**: this should NOT happen since v0.7.1 — the auth singletons detect a credentials fingerprint change and rebuild the clients automatically. If you observe this, file an issue. As a workaround, call the `reauthenticate` tool from your agent, or restart the MCP client.
+
+### `App is blocked` even after adding test user
+
+If you completed step "add test user" but Google still blocks the flow, your client may be in **Production** mode without verification. Check Cloud Console → APIs & Services → OAuth consent screen → Publishing status. Either:
+- Switch to **Testing** + ensure test user is added, or
+- Use a **Service Account** (no consent screen involved).
 
 ## Configure with your client
 

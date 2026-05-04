@@ -4,6 +4,59 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] — 2026-05-04
+
+### Documentation & auth UX hardening (no feature changes, no breaking changes)
+
+Triggered by a real user incident: a webmaster trying to set up the MCP on
+a headless agent IA hit `invalid_grant: Token has been expired or revoked`
+followed by `This app is blocked` when re-running OAuth — and was unsure
+whether Service Account was a supported alternative because the docs
+buried it inside a collapsed `<details>` block. Fixed three documentation
+gaps and one runtime UX issue so this scenario is unambiguous next time.
+
+### Documentation
+
+- **README.md § Quickstart**: added an upfront decision matrix (ADC vs
+  Service Account vs OAuth) so the user picks the right method *before*
+  hitting an error. Service Account is now explicitly recommended for
+  headless / multi-client / agent IA contexts.
+- **README.md § Authentication**: removed the `<details>` collapse hiding
+  Service Account. Promoted to a first-class section with full
+  step-by-step setup (Cloud Console → SA → JSON → grant SA email Viewer
+  on each GSC site + GA4 property → env var → restart). 80 lines of
+  actionable instructions where there used to be 4.
+- **README.md § Troubleshooting** (NEW): documented the 8 most common
+  errors with exact root cause + fix, including `invalid_grant`,
+  `This app is blocked`, `EOFError EOF when reading a line`,
+  `403 PERMISSION_DENIED`, empty `list_sites` / `list_properties`,
+  multi-tenant data leak symptoms, post-test-user `App is blocked`.
+- **AGENTS.md § 8b Authentication failures** (NEW): triage table for the
+  agent IA. Maps each error fragment to a recommended action. Strong
+  default: in headless / agent / VPS contexts, recommend Service Account
+  rather than improvising OAuth retries.
+
+### Runtime UX
+
+- **`auth.py` — proactive ADC validation**: `_from_adc()` now performs a
+  refresh test on cached credentials. If the refresh token is revoked
+  AND a Service Account is configured (`GOOGLE_SEO_SERVICE_ACCOUNT_FILE`),
+  silently falls through to it — no more confusing 503 from inside the
+  first tool call when the cascade *should* work. If no SA fallback is
+  configured, raises an actionable `RuntimeError` pointing the user to
+  the README troubleshooting section, not the raw `invalid_grant` from
+  google-auth.
+- **`auth.py` — improved "no credentials" message**: when none of the
+  three methods is configured, the error now lists the 3 options with
+  their exact env vars + a hint to read README § Troubleshooting if
+  ADC was tried and failed with `invalid_grant` or `App is blocked`.
+
+### Tests
+92/92 pass. No new tests required — runtime change is defensive only,
+existing auth tests cover the cascade order.
+
+---
+
 ## [0.7.1] — 2026-04-30
 
 ### Stability hardening — multi-client production readiness

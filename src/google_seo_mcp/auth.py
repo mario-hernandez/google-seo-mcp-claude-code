@@ -131,7 +131,45 @@ def _from_adc() -> Any | None:
     try:
         creds, project = google_auth_default(scopes=_scopes())
         log.info("Using ADC credentials (project=%s)", project)
+        # Validate that the refresh token still works. Catches the common
+        # "ADC was set up months ago, refresh token revoked by Google"
+        # silent failure before it surfaces as a confusing 503 deep inside
+        # the first tool call. If a SA file is configured, we let the
+        # cascade fall through to it instead of dying here.
+        try:
+            if hasattr(creds, "expired") and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+        except RefreshError as e:
+            sa_configured = bool(os.getenv("GOOGLE_SEO_SERVICE_ACCOUNT_FILE"))
+            if sa_configured:
+                log.warning(
+                    "ADC refresh failed (%s) but a Service Account is configured — "
+                    "falling through to it.", e,
+                )
+                return None
+            # No SA fallback available — raise an actionable error rather
+            # than letting the LLM see a raw `invalid_grant` traceback.
+            raise RuntimeError(
+                "Google ADC refresh token is revoked or expired.\n"
+                "\n"
+                "Two options:\n"
+                "  (a) RECOMMENDED — Switch to Service Account (no token expiration, "
+                "works headless):\n"
+                "      1. Create a Service Account JSON in Cloud Console\n"
+                "      2. Grant its email Viewer/Restricted on each GSC site + GA4 property\n"
+                "      3. export GOOGLE_SEO_SERVICE_ACCOUNT_FILE=/path/to/sa.json\n"
+                "      Full walkthrough: README.md § Service Account setup.\n"
+                "\n"
+                "  (b) Re-run ADC interactively (only works on a desktop with browser):\n"
+                "      gcloud auth application-default revoke && \\\n"
+                "      gcloud auth application-default login --scopes=...\n"
+                "\n"
+                "If 'gcloud auth ... login' shows 'This app is blocked', the OAuth client "
+                "is unverified for sensitive scopes. Use option (a)."
+            ) from e
         return creds
+    except RuntimeError:
+        raise  # our own actionable message — let it propagate
     except Exception as e:
         log.debug("ADC unavailable: %s", e)
         return None
@@ -224,10 +262,22 @@ def _build_creds() -> Any:
     creds = _from_adc() or _from_service_account() or _from_oauth_flow()
     if creds is None:
         raise RuntimeError(
-            "No Google credentials found. Set up ADC with `gcloud auth application-default "
-            "login --scopes=https://www.googleapis.com/auth/webmasters.readonly,"
-            "https://www.googleapis.com/auth/analytics.readonly`, or set "
-            "GOOGLE_SEO_OAUTH_CLIENT_FILE / GOOGLE_SEO_SERVICE_ACCOUNT_FILE."
+            "No Google credentials found. Pick one of three methods:\n"
+            "\n"
+            "  1) ADC (interactive desktop) — gcloud auth application-default login \\\n"
+            "       --scopes=https://www.googleapis.com/auth/webmasters.readonly,"
+            "https://www.googleapis.com/auth/analytics.readonly\n"
+            "\n"
+            "  2) Service Account (RECOMMENDED for headless/agents/multi-client) —\n"
+            "       export GOOGLE_SEO_SERVICE_ACCOUNT_FILE=/path/to/sa.json\n"
+            "       Then grant the SA email Viewer/Restricted on each GSC site + GA4 property.\n"
+            "       Full walkthrough: README.md § Service Account setup.\n"
+            "\n"
+            "  3) OAuth Desktop flow —\n"
+            "       export GOOGLE_SEO_OAUTH_CLIENT_FILE=/path/to/client_secret.json\n"
+            "\n"
+            "If you already tried ADC and saw 'invalid_grant' or 'This app is blocked', "
+            "switch to Service Account. See README.md § Troubleshooting."
         )
     return creds
 

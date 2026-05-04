@@ -369,6 +369,25 @@ Step 5 — Compose dashboard rows:
 
 ---
 
+## 8b. Authentication failures — what to do when tools error out
+
+If the very first tool call (or any tool that hits Google APIs) errors with auth-related text, **do not retry blindly**. Read the error and route the user to the right fix from §[Troubleshooting in README.md](./README.md#troubleshooting). Below is the fast triage table:
+
+| Error fragment in the response | Root cause | Action |
+|---|---|---|
+| `invalid_grant: Token has been expired or revoked` | ADC refresh token revoked by Google | **Recommend Service Account migration**. Don't recommend re-running `gcloud auth application-default login` blindly — the underlying OAuth client may be flagged. |
+| `This app is blocked` (during OAuth flow) | OAuth client unverified for sensitive scopes | **Recommend Service Account**. Adding test users only works in External + Testing mode and has a 100-user lifecycle cap. |
+| `EOFError: EOF when reading a line` | Trying to run interactive `gcloud auth ... login` from a non-interactive shell (Claude Code, agent, CI) | **Recommend Service Account**. OAuth flow is not viable in this environment. |
+| `403 PERMISSION_DENIED — has not been used in project X` | Required APIs not enabled in GCP project | Tell the user to run `gcloud services enable searchconsole.googleapis.com analyticsadmin.googleapis.com analyticsdata.googleapis.com --project=<project>` |
+| `gsc_list_sites` / `ga4_list_properties` returns empty list | Auth identity has no access to any property | Tell the user to grant the auth identity (their Google account email or the SA email) **Restricted/Full** in GSC and **Viewer** in GA4 for each property they want accessed. |
+| Tool returns data from the wrong client | Stale credentials cached after rotation | Call `reauthenticate` tool. If still wrong, restart MCP client. |
+
+**Strong default recommendation when any auth error appears in headless / agent / multi-client / VPS contexts**: switch to Service Account. It eliminates token expiration, browser dependency, consent screen issues, and works identically across all environments. The setup walkthrough is in [README.md § Service Account setup](./README.md#service-account-setup-recommended-for-headless--multi-client) — point the user there explicitly rather than improvising the steps.
+
+**Never recommend bypassing the SSRF guard, the destructive-ops gate, or the auth cascade order.** These are intentional security boundaries.
+
+---
+
 ## 9. Edge cases
 
 ### Small / new sites (<100 clicks/mo)
