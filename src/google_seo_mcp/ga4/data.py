@@ -210,6 +210,18 @@ def _serialize_response(resp: Any) -> dict:
     }
     if resp.totals:
         out["totals"] = [_serialize_totals(t, mets) for t in resp.totals]
+    # Surface property timezone + currency from the response metadata so
+    # callers (and the agent IA) can resolve relative dates like "yesterday"
+    # against the right zone instead of guessing UTC. GA4 stores this per
+    # property; values like "Europe/Madrid", "America/New_York", "EUR", "USD".
+    md = getattr(resp, "metadata", None)
+    if md is not None:
+        tz = getattr(md, "time_zone", None) or None
+        cur = getattr(md, "currency_code", None) or None
+        if tz:
+            out["property_timezone"] = tz
+        if cur:
+            out["property_currency"] = cur
     return out
 
 

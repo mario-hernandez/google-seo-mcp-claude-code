@@ -29,6 +29,63 @@ def _resolve_mcp_version() -> str:
     except PackageNotFoundError:
         return "unknown (not installed as a package)"
 
+
+# Mapping from tool-name prefix to category. Order matters — first match wins,
+# so list the more specific prefixes BEFORE shorter ones that would otherwise
+# capture them.
+_CATEGORY_RULES: list[tuple[str, str]] = [
+    # Cross-platform first (otherwise gsc_/ga4_ would never see them)
+    ("cross_", "cross_platform"),
+    # GSC
+    ("gsc_", "gsc"),
+    # GA4
+    ("ga4_", "ga4"),
+    # Performance
+    ("lighthouse_", "lighthouse"),
+    ("crux_", "crux"),
+    # Schema
+    ("schema_", "schema"),
+    # Indexing — both indexnow_* and google_indexing_*
+    ("indexnow_", "indexing"),
+    ("google_indexing_", "indexing"),
+    # Trends / Suggest / Alerts
+    ("google_trends_", "trends"),
+    ("google_suggest", "trends"),
+    ("alerts_", "trends"),
+    # Migration
+    ("migration_", "migration"),
+    # AEO
+    ("aeo_", "aeo"),
+    # v0.8.0 modules
+    ("history_", "history"),
+    ("serp_", "serp"),
+    ("logs_", "logs"),
+    # Meta — leave a 'meta' bucket for everything else (get_capabilities,
+    # reload_credentials, reauthenticate)
+]
+
+
+def _categorize_registered_tools() -> dict[str, list[str]]:
+    """Group the actually-registered tools by category, derived from the name
+    prefix (NOT a hardcoded list).
+
+    Eliminates the historical drift between what's registered and what
+    `get_capabilities` advertises. If a future contributor registers a tool
+    whose prefix isn't in `_CATEGORY_RULES`, it lands in `meta` so the
+    operator still sees it — and can file a PR to add the rule.
+    """
+    categories: dict[str, list[str]] = {}
+    for tool in mcp._tool_manager.list_tools():
+        name = tool.name
+        bucket = "meta"
+        for prefix, label in _CATEGORY_RULES:
+            if name.startswith(prefix):
+                bucket = label
+                break
+        categories.setdefault(bucket, []).append(name)
+    # Sort each bucket alphabetically for stable output across calls.
+    return {k: sorted(v) for k, v in sorted(categories.items())}
+
 from . import auth as auth_module
 from .crossplatform import attribution as cp_attr
 from .crossplatform import diagnosis as cp_diag
@@ -384,6 +441,13 @@ def get_capabilities() -> dict:
         ga4_ok = False
         ga4_err = str(e)[:200]
 
+    # Categories derived DYNAMICALLY from the actual registered tools so the
+    # output never drifts from reality. The previous hardcoded dict went stale
+    # across versions and made entire modules (AEO, history, serp, logs,
+    # advanced crawl) invisible to agents that used `get_capabilities` as the
+    # source of truth for tool discovery. Lesson learned.
+    categories = _categorize_registered_tools()
+
     return {
         "mcp_version": _resolve_mcp_version(),
         "auth": {
@@ -392,76 +456,9 @@ def get_capabilities() -> dict:
             "credential_type": auth_module.current_credential_type(),
             "destructive_enabled": os.getenv("GSC_ALLOW_DESTRUCTIVE") == "true",
         },
-        "categories": {
-            "gsc_sites": ["gsc_list_sites", "gsc_inspect_url"],
-            "gsc_sitemaps": ["gsc_list_sitemaps", "gsc_submit_sitemap"],
-            "gsc_analytics": ["gsc_search_analytics", "gsc_site_snapshot"],
-            "gsc_intelligence": [
-                "gsc_quick_wins", "gsc_traffic_drops", "gsc_content_decay",
-                "gsc_cannibalization", "gsc_ctr_opportunities", "gsc_alerts",
-            ],
-            "ga4_admin": ["ga4_list_properties", "ga4_get_property_details"],
-            "ga4_reporting": [
-                "ga4_search_schema", "ga4_list_schema_categories",
-                "ga4_estimate_query_size", "ga4_query",
-            ],
-            "ga4_intelligence": [
-                "ga4_anomalies", "ga4_traffic_drops_by_channel",
-                "ga4_landing_page_health", "ga4_event_volume_comparison",
-                "ga4_conversion_funnel",  # deprecated alias of event_volume_comparison
-                "ga4_cohort_retention", "ga4_channel_attribution",
-                "ga4_content_decay",
-            ],
-            "cross_platform": [
-                "cross_gsc_to_ga4_journey",
-                "cross_traffic_health_check",
-                "cross_opportunity_matrix",
-                "cross_seo_to_revenue_attribution",
-                "cross_landing_page_full_diagnosis",
-                "cross_multi_property_comparison",
-            ],
-            "lighthouse": [
-                "lighthouse_audit", "lighthouse_core_web_vitals",
-                "lighthouse_lcp_opportunities", "lighthouse_compare_mobile_desktop",
-                "lighthouse_seo_score",
-            ],
-            "crux": ["crux_current", "crux_history", "crux_compare_origins"],
-            "schema": [
-                "schema_extract_url", "schema_validate_url", "schema_suggest_for_page",
-            ],
-            "indexing": [
-                "indexnow_generate_key", "indexnow_submit", "indexnow_submit_sitemap",
-                "google_indexing_publish", "google_indexing_delete",
-            ],
-            "trends": [
-                "google_suggest", "google_suggest_alphabet",
-                "google_trends_keyword", "google_trends_related",
-                "alerts_rss_parse",
-            ],
-            "migration": [
-                "migration_wp_audit_site",
-                "migration_wp_extract_redirects",
-                "migration_wp_internal_links_graph",
-                "migration_prerender_check",
-                "migration_prerender_vs_hydrated",
-                "migration_googlebot_diff",
-                "migration_multi_bot_diff",
-                "migration_verify_googlebot_ip",
-                "migration_sitemap_diff",
-                "migration_sitemap_validate",
-                "migration_redirects_plan",
-                "migration_export_redirects_nginx",
-                "migration_export_redirects_apache",
-                "migration_export_redirects_cloudflare",
-                "migration_seo_equity_report",
-                "migration_wayback_baseline",
-                "migration_schema_parity_check",
-                "migration_hreflang_cluster_audit",
-                "migration_indexation_recovery_monitor",
-            ],
-            "meta": ["get_capabilities", "reauthenticate"],
-            "resources": ["google-seo://algorithm-updates"],
-        },
+        "tools_total": sum(len(v) for v in categories.values() if isinstance(v, list)),
+        "categories": categories,
+        "resources": ["google-seo://algorithm-updates"],
         "tip": (
             "Swiss-knife workflow: (1) `gsc_list_sites` + `ga4_list_properties` to "
             "enumerate. (2) `cross_traffic_health_check` to verify tracking. "

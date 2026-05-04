@@ -102,9 +102,19 @@ def query_ga4(
         limit=limit,
         aggregations=aggregations,
     )
+    # Surface the property's timezone + currency from the response metadata
+    # in `_meta` so the agent can interpret relative dates ("yesterday",
+    # "last_7_days") against the right zone rather than UTC. GA4 dates are
+    # always rendered in the property's configured TZ.
+    extra = {}
+    if "property_timezone" in result:
+        extra["property_timezone"] = result["property_timezone"]
+    if "property_currency" in result:
+        extra["property_currency"] = result["property_currency"]
     return with_meta(
         result,
         source="data.run_report",
         property=pid,
         period={"start": start_date, "end": end_date},
+        extra=extra or None,
     )

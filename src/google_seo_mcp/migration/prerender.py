@@ -200,22 +200,42 @@ def fetch_as_with_meta(
 
 
 def prerender_signals(url: str) -> dict[str, Any]:
-    """Fetch URL without executing JS and report SEO signals + health.
+    """Fetch URL without executing JS and report SEO signals + health + mode.
 
     Use this to validate the pre-rendered output of an SSR pipeline before
     React/Vue/Svelte hydration. Detects missing meta, missing schema, SPA
     shell pages (no real content), etc.
 
-    Third-party text fields (title, meta_description, og, h1) are wrapped
-    as ``<untrusted-third-party-content>...</untrusted-third-party-content>``
-    so an LLM consuming this output cannot be hijacked by prompt-injection
-    payloads embedded in the page metadata.
+    Returns a ``prerender_mode`` field with one of three values that
+    capture an operationally important distinction:
 
-    Also detects the *shell-only soft-404* pattern (200 status with body
-    containing only a JS root mount + meta tags) — the failure mode of
-    Next.js / Nuxt / SvelteKit deployments that forget SSR.
+    - ``ssr``        — head AND body have content. Ideal for Googlebot,
+                       AEO scrapers, social previews, Bingbot.
+    - ``head_only``  — head has title/meta/og/canonical/jsonld but body is
+                       essentially empty. Works for Googlebot's modern
+                       JS-rendering pipeline, but FAILS for AEO bots
+                       (ChatGPT/Claude/Perplexity), social scrapers
+                       (Facebook/Twitter/LinkedIn), and Bingbot. Common
+                       intermediate state with custom Vite/SPA + meta-injection
+                       middleware.
+    - ``csr``        — neither head nor body have content. Catastrophic.
+                       Page is a pure SPA shell.
+    - ``unknown``    — fetch failed or content couldn't be classified.
+
+    The ``health`` semaphore (green/amber/red) gives a quick at-a-glance
+    verdict, while ``prerender_mode`` carries the nuance — ``head_only`` is
+    operationally distinct from ``csr`` (the former is a viable interim
+    state for Google-only audiences, the latter is broken for everyone).
+
+    Only fields containing free-form scraped text (``visible_text_chars``,
+    body excerpts) are wrapped in ``<untrusted-third-party-content>`` markers
+    for prompt-injection defense. Structural meta fields (``title``,
+    ``meta_description``, ``canonical``, ``og.*``, ``h1``) are returned
+    unwrapped because (a) they're already constrained by HTML parsing
+    rules to short literal strings, (b) wrapping them makes LLMs
+    quote them literally to the user instead of treating them as data.
     """
-    from ..security import mark_third_party_strings
+    from ..security import wrap_untrusted
 
     html = fetch_as(url, USER_UA)
     sig = _extract_signals(html, url)
@@ -237,13 +257,17 @@ def prerender_signals(url: str) -> dict[str, Any]:
     )
     if is_shell:
         sig.setdefault("issues", []).append("shell_only_soft_404")
-        sig["health"] = "red"
         sig["soft_404_pattern"] = (
             "Body is a JS root mount (#__next/#root/#app/#svelte) with "
             "<200 chars of visible text. Page returns 200 but is a soft 404 "
             "for non-JS crawlers — fix SSR before relaunch."
         )
-    sig = mark_third_party_strings(sig)
+
+    # Targeted untrusted wrapping: only the body excerpt, never structural
+    # meta. The reviewer was right — wrapping every string was overprotective
+    # and made LLMs quote meta tags literally to users.
+    if "body_excerpt" in sig and sig["body_excerpt"]:
+        sig["body_excerpt"] = wrap_untrusted(sig["body_excerpt"])
 
     issues: list[str] = []
     if not sig["title"]:
@@ -264,12 +288,46 @@ def prerender_signals(url: str) -> dict[str, Any]:
         issues.append("missing_h1")
 
     sig["issues"] = issues
+
+    # Classify the prerender mode independently of the health verdict.
+    # The two answer different questions: mode = "what kind of SSR is
+    # this?", health = "is it good enough?"
+    head_present = bool(
+        sig.get("title")
+        and sig.get("meta_description")
+        and (sig.get("canonical") or sig.get("og_count", 0) >= 2)
+    )
+    body_present = (
+        sig.get("visible_text_chars", 0) >= 500
+        and sig.get("p_tag_count", 0) >= 3
+    )
+    if head_present and body_present:
+        sig["prerender_mode"] = "ssr"
+    elif head_present and not body_present:
+        sig["prerender_mode"] = "head_only"
+    elif not head_present and not body_present:
+        sig["prerender_mode"] = "csr"
+    else:
+        sig["prerender_mode"] = "unknown"
+
+    sig["prerender_mode_explanation"] = {
+        "ssr": "Head and body both pre-rendered. Works for all crawlers (Google, Bing, AEO bots, social).",
+        "head_only": "Head pre-rendered, body relies on JS hydration. Works for Googlebot's JS-rendering pipeline but FAILS for Bingbot, AEO bots (ChatGPT/Claude/Perplexity), and social scrapers (Facebook/Twitter/LinkedIn). Operationally a common intermediate state — viable for Google-only audiences, blocking for AEO 2026.",
+        "csr": "Pure client-side render. Empty head AND empty body. Catastrophic for any non-JS-executing crawler.",
+        "unknown": "Fetch failed or content couldn't be classified. Re-run after fixing connectivity.",
+    }[sig["prerender_mode"]]
+
     if not issues:
         sig["health"] = "green"
-    elif "looks_like_spa_shell" in issues or "very_low_visible_text" in issues:
+    elif (
+        "shell_only_soft_404" in issues
+        or "looks_like_spa_shell" in issues
+        or "very_low_visible_text" in issues
+    ):
         sig["health"] = "red"
     else:
         sig["health"] = "amber"
+
     return sig
 
 

@@ -4,6 +4,80 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] — 2026-05-04
+
+### 4 fixes from a real-world technical review during a live migration
+
+A migration consultant ran the MCP through a full SEO migration audit and
+returned a precise, prioritised feedback list. All four findings fixed
+without breaking changes.
+
+### Fixed
+
+**`get_capabilities` no longer drifts from registered tools** (the most
+serious of the four — it caused all the others). The previous version
+hardcoded a `categories` dict that hadn't been updated since v0.6.x, so
+~30 tools were registered but invisible to anyone discovering the MCP
+via `get_capabilities` (`aeo_*`, `history_*`, `serp_*`, `logs_*`, the
+new `migration_redirect_chain`/`_chains`, `migration_image_alts`/
+`_coverage`, `migration_robots_audit`/`_diff`, `reload_credentials`).
+Replaced with `_categorize_registered_tools()` which derives categories
+**dynamically** from the actual registered tools using a
+prefix→category rules table. New tools land in their category
+automatically; unknown prefixes fall back to `meta` so the operator
+still sees them and can file a PR to add the rule. The output now
+includes `tools_total` so callers can sanity-check the count.
+
+**`migration_prerender_check` distinguishes 3 prerender modes**.
+Previously the only output was `health: green/amber/red` plus a flat
+`looks_like_spa_shell` issue tag, conflating two operationally
+different states: a project with head-only injection (head OK but body
+empty — works for Googlebot's JS-rendering pipeline, fails for
+Bingbot/AEO bots/social scrapers) was indistinguishable from a pure
+CSR catastrophe. Added a `prerender_mode` field with values
+`ssr` / `head_only` / `csr` / `unknown` plus a
+`prerender_mode_explanation` describing what each means for which
+crawlers. `health` semaphore preserved for at-a-glance verdict.
+
+**Untrusted-content wrapping is now targeted, not blanket**.
+`prerender_signals` previously wrapped every string field
+(`title`, `meta_description`, `og.*`, `canonical`, `h1`,
+`visible_text`, etc.) in `<untrusted-third-party-content>` markers
+as defense against prompt injection. The reviewer pointed out
+correctly that meta tags are short literal strings constrained by
+HTML parsing rules, and wrapping them made LLMs quote them
+literally to users instead of treating them as data. Now only
+`body_excerpt` (free-form scraped paragraphs) gets the wrapper.
+Structural meta fields are returned bare. Prompt-injection defense
+preserved where it actually matters.
+
+**GA4 tools now expose `property_timezone` and `property_currency`**.
+The `RunReportResponse.metadata` from GA4 Data API carries the
+property's configured timezone (e.g. `Europe/Madrid`) and currency
+(`EUR`), but the MCP was discarding both. For queries with relative
+dates (`yesterday`, `last_7_days`), the result silently depended on
+the property's TZ — invisible to the agent. Now `_serialize_response`
+captures them and `query_ga4` propagates them into `_meta` via
+`extra`. The agent can now interpret dates against the right zone
+instead of guessing UTC.
+
+### Tests
+92/92 pass. No new tests needed — fixes are additive metadata exposure
+and stricter classification, not behavior change to existing flows.
+
+### Backward compatibility
+Strictly additive. All existing fields in `get_capabilities`,
+`prerender_signals`, and `query_ga4` outputs preserved; new fields
+added alongside.
+
+### Acknowledgment
+The `get_capabilities` drift bug had been silently degrading the MCP
+since v0.6.x. The technical review made it visible. **Get_capabilities
+auth status (`gsc.ok` + `ga4.ok` + `credential_type`)** was
+specifically called out as helpful — keeping that contract going forward.
+
+---
+
 ## [0.8.1] — 2026-05-04
 
 ### Singular convenience wrappers for two batch tools
