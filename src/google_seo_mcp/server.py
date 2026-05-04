@@ -226,6 +226,7 @@ _register(migration_tools.wp_internal_links_graph, name="migration_wp_internal_l
 _register(migration_tools.prerender_check, name="migration_prerender_check")
 _register(migration_tools.prerender_check_batch, name="migration_prerender_check_batch")
 _register(migration_tools.calibration_check, name="migration_calibration_check")
+_register(migration_tools.meta_validate_golden_set, name="migration_meta_validate_golden_set")
 _register(migration_tools.prerender_vs_hydrated, name="migration_prerender_vs_hydrated")
 _register(migration_tools.googlebot_diff, name="migration_googlebot_diff")
 _register(migration_tools.multi_bot_diff, name="migration_multi_bot_diff")

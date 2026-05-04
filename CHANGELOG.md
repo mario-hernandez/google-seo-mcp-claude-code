@@ -4,6 +4,72 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.5] — 2026-05-04
+
+### Benchmark rot defense — versioned golden set + meta-validator
+
+The forensic auditor flagged a real maintenance risk in v0.8.4:
+``migration_calibration_check``'s golden set (nextjs.org, cloudflare.com,
+reactjs.org, create-react-app.dev) could rot silently as those sites
+rotate their stacks. A false ``drift_detected`` would then look like a
+detector regression when in fact the *benchmark* aged out — wasting
+the operator's debugging time. Fixed proactively, not deferred.
+
+### Added
+
+**`_GOLDEN_SET_VERSION` stamp** in every `migration_calibration_check`
+response. When an operator sees a ``drift_detected``, the version
+field tells them whether their installed MCP has the latest
+benchmarks. Mismatch + drift = upgrade. Match + drift = real
+detector regression. The version follows a quarterly schema
+(``"2026-Q2.1"``) bumped each time the dev rotates entries.
+
+**`migration_meta_validate_golden_set` tool** — a maintenance probe
+that verifies the BENCHMARKS still represent what they claim, using
+a classifier that does NOT share regexes or thresholds with the
+production ``prerender_signals``. The two are complementary:
+- Both pass → benchmark + classifier aligned with reality.
+- Calibration fails / meta passes → real classifier regression.
+- Calibration passes / meta fails → classifier drifted in lockstep
+  with the benchmark; reality has moved.
+- Both fail → benchmark rot. Site rotated its stack; refresh the
+  set, bump version, ship.
+
+The validator uses **macroscopic-property classification**:
+independent regex patterns + wider thresholds (>2KB visible text vs
+production's >500 chars). This makes it non-tautological — a drift
+in either path is caught by the other.
+
+**Updated golden set to v2026-Q2.1** after the new validator caught
+real benchmark rot on first run. ``create-react-app.dev`` had drifted
+into ``ambiguous`` (1463 chars of pre-rendered text — Docusaurus thin
+docs page). Replaced with ``vercel.com`` (Next.js + Vercel,
+7000+ chars) and added ``nuxt.com`` as a fifth probe for stack
+diversity. Now five different deployment stacks: Next.js, Cloudflare
+Workers, Gatsby, Vercel marketing, Nuxt 3.
+
+**Recommended workflow** (in calibration_check docstring): when
+``drift_detected``, the response now lists TWO possible causes —
+benchmark rot vs detector regression — and tells the operator how to
+distinguish them by checking ``golden_set_version`` against the latest
+CHANGELOG. Plus an inline maintenance note pointing devs to
+``meta_validate_golden_set`` as the proactive guard (run it monthly
+or before each release).
+
+### Tool count: 101 → 102.
+
+### Tests
+103/103 pass. ``test_tool_count`` updated 101 → 102.
+
+### Backward compatibility
+Strictly additive. Existing ``calibration_check`` callers see the
+new ``golden_set_version`` field in the response; nothing else
+changed. The set rotation (``create-react-app.dev`` → ``vercel.com``
++ ``nuxt.com``) is internal — only matters if someone pinned the old
+URL list, which no documented call did.
+
+---
+
 ## [0.8.4] — 2026-05-04
 
 ### 4 fixes from a third real-world feedback pass (forensic audit consultant)

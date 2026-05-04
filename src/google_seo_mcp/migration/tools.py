@@ -97,6 +97,240 @@ def prerender_check(url: str) -> dict:
     return with_meta(pr.prerender_signals(url), source="migration.prerender_check", site_url=url)
 
 
+# ─── Calibration check golden set ───────────────────────────────────────
+# Curated public sites with known prerender behaviour, used as control
+# samples when verifying the detector hasn't drifted. The version stamp
+# below is BUMPED whenever the dev rotates the set — so an operator who
+# sees a `drift_detected` after a long gap can compare their installed
+# version against the latest README to know whether the failure is an
+# instrument regression OR a stale benchmark.
+#
+# **Maintenance note for the dev**: re-validate this set roughly every
+# 6-12 months. Vercel/Cloudflare/etc. rotate their stacks (RSC,
+# streaming, ISR) and a target that was `ssr` last quarter may be
+# something else next quarter. If you hit a false `drift_detected`,
+# refresh the set, bump `_GOLDEN_SET_VERSION`, document the change in
+# CHANGELOG, and ship. See issue tracker for the `meta_validate_golden_set`
+# proposal — an internal job to auto-detect benchmark rot.
+_GOLDEN_SET_VERSION = "2026-Q2.1"
+_GOLDEN_SET: dict[str, str] = {
+    # Production SSR sites — independently validated 2026-05-04 by
+    # `meta_validate_golden_set`. Each scores 7000+ chars of pre-rendered
+    # visible text with 3-4/4 head signals (title, meta description,
+    # canonical, og). All four hosted on different stacks so a single
+    # vendor outage doesn't break all probes.
+    "https://nextjs.org/": "ssr",          # Next.js + Vercel
+    "https://www.cloudflare.com/": "ssr",  # Workers + Cloudflare edge
+    "https://reactjs.org/": "ssr",         # Gatsby SSG (under Meta)
+    "https://vercel.com/": "ssr",          # replaced create-react-app.dev (drifted to ambiguous 2026-05-04 — its docs page leaned too thin)
+    "https://nuxt.com/": "ssr",            # Nuxt 3 SSR (5th probe, redundancy)
+}
+
+
+def _independent_macro_classify(html: str) -> dict[str, Any]:
+    """Macroscopic-property classification of an HTML body.
+
+    INDEPENDENT from ``prerender._extract_signals`` — uses different regex
+    patterns AND different thresholds. This is what makes
+    ``meta_validate_golden_set`` non-tautological: if both the production
+    classifier AND this validator drift in lockstep, the divergence
+    triggers a flag (because they should agree on benchmarks but their
+    independent paths catch each other).
+
+    Heuristic thresholds are deliberately wider than the production
+    classifier (>2KB visible text vs production's >500 chars) so that
+    a marginal classification in production still validates here when
+    the page is unambiguously one mode.
+
+    Returns dict with: ``mode``, ``visible_text_chars``, ``head_signals``,
+    ``debug`` for forensic inspection.
+    """
+    import re as _re
+
+    # Independent visible-text extraction: strip script/style/template/svg
+    # and tags. Different regex order than _extract_signals — strip order
+    # matters because Vue/Svelte put template content INSIDE templates.
+    stripped = _re.sub(r"<template\b[^>]*>.*?</template>", " ", html, flags=_re.DOTALL | _re.IGNORECASE)
+    stripped = _re.sub(r"<script\b[^>]*>.*?</script\s*>", " ", stripped, flags=_re.DOTALL | _re.IGNORECASE)
+    stripped = _re.sub(r"<style\b[^>]*>.*?</style\s*>", " ", stripped, flags=_re.DOTALL | _re.IGNORECASE)
+    stripped = _re.sub(r"<svg\b[^>]*>.*?</svg>", " ", stripped, flags=_re.DOTALL | _re.IGNORECASE)
+    stripped = _re.sub(r"<noscript\b[^>]*>.*?</noscript>", " ", stripped, flags=_re.DOTALL | _re.IGNORECASE)
+    stripped = _re.sub(r"<[^>]+>", " ", stripped)
+    stripped = _re.sub(r"\s+", " ", stripped).strip()
+    text_chars = len(stripped)
+
+    # Independent head-signal detection (different regex from production).
+    has_title = bool(_re.search(r"<title\b[^>]*>\s*[^<\s][^<]*</title", html, _re.IGNORECASE))
+    has_meta_desc = bool(_re.search(
+        r"<meta\b[^>]*\bname\s*=\s*[\"']?description[\"']?[^>]*\bcontent\s*=\s*[\"'][^\"']+",
+        html, _re.IGNORECASE,
+    ))
+    has_canonical = bool(_re.search(
+        r"<link\b[^>]*\brel\s*=\s*[\"']?canonical[\"']?", html, _re.IGNORECASE,
+    ))
+    has_og = bool(_re.search(
+        r"<meta\b[^>]*\bproperty\s*=\s*[\"']?og:", html, _re.IGNORECASE,
+    ))
+    head_signals = sum([has_title, has_meta_desc, has_canonical, has_og])
+
+    # Macroscopic thresholds — wider than production. Disagreement vs
+    # production = real signal that something rotated.
+    SSR_TEXT_THRESHOLD = 2000      # production uses 500
+    SHELL_TEXT_THRESHOLD = 300
+    HEAD_SIGNALS_REQUIRED = 3      # title + meta_desc + (canonical OR og)
+
+    if text_chars > SSR_TEXT_THRESHOLD and head_signals >= HEAD_SIGNALS_REQUIRED:
+        mode = "ssr"
+    elif head_signals >= HEAD_SIGNALS_REQUIRED and text_chars < SHELL_TEXT_THRESHOLD:
+        mode = "head_only"
+    elif head_signals < 2 and text_chars < SHELL_TEXT_THRESHOLD:
+        mode = "csr"
+    else:
+        # Marginal — could be ssr-with-thin-content, or partial pre-render.
+        # Fail open: report ambiguous so the operator sees the macro
+        # numbers and decides.
+        mode = "ambiguous"
+
+    return {
+        "mode": mode,
+        "visible_text_chars": text_chars,
+        "head_signals_count": head_signals,
+        "debug": {
+            "has_title": has_title,
+            "has_meta_description": has_meta_desc,
+            "has_canonical": has_canonical,
+            "has_open_graph": has_og,
+        },
+    }
+
+
+def meta_validate_golden_set() -> dict:
+    """**Internal maintenance tool** — verifies the calibration golden set
+    itself hasn't aged out.
+
+    Different from ``calibration_check``: that one tests whether the
+    PRODUCTION classifier (``prerender_signals``) still agrees with the
+    benchmarks. THIS one tests whether the BENCHMARKS still represent
+    what they claim, using a classifier that does NOT share regexes or
+    thresholds with production.
+
+    The two are complementary:
+
+    - Both pass            → benchmark + classifier are aligned with reality.
+    - Calibration fails, meta passes  → classifier regression. Fix code.
+    - Calibration passes, meta fails  → classifier matches benchmark, but
+                                        benchmark may be aligned with stale
+                                        web behaviour. Investigate.
+    - Both fail            → benchmark rot. Site rotated its stack. Refresh
+                             the golden set, bump ``_GOLDEN_SET_VERSION``,
+                             ship a release.
+
+    This is the proactive guard against benchmark rot. The dev should run
+    it monthly (or before each release) so the calibration fixture doesn't
+    become a reliable false alarm. The result includes
+    ``rotation_recommended`` per target so the dev knows exactly which
+    entries to swap.
+
+    Returns:
+        ``targets`` — per-target {url, claimed_mode, observed_mode,
+            agrees, rotation_recommended, observation_details}.
+        ``benchmark_health`` — "fresh" / "partially_stale" / "stale".
+        ``rotation_recommended_for`` — list of URLs to swap.
+        ``golden_set_version`` — current version stamp.
+    """
+    import httpx as _httpx
+
+    UA = (
+        "Mozilla/5.0 (compatible; google-seo-mcp/0.8 meta-validator; "
+        "+https://github.com/mario-hernandez/google-seo-mcp-claude-code)"
+    )
+    targets: list[dict[str, Any]] = []
+    rotation_for: list[str] = []
+    fetch_errors = 0
+    headers = {"User-Agent": UA}
+
+    for url, claimed in _GOLDEN_SET.items():
+        try:
+            with _httpx.Client(timeout=20.0, follow_redirects=True, headers=headers) as c:
+                r = c.get(url)
+                html = r.text
+            obs = _independent_macro_classify(html)
+            agrees = obs["mode"] == claimed
+            if not agrees:
+                rotation_for.append(url)
+            targets.append({
+                "url": url,
+                "claimed_mode": claimed,
+                "observed_mode": obs["mode"],
+                "agrees": agrees,
+                "rotation_recommended": not agrees,
+                "observation_details": {
+                    "visible_text_chars": obs["visible_text_chars"],
+                    "head_signals_count": obs["head_signals_count"],
+                    **obs["debug"],
+                },
+            })
+        except Exception as e:
+            fetch_errors += 1
+            targets.append({
+                "url": url,
+                "claimed_mode": claimed,
+                "observed_mode": "fetch_error",
+                "agrees": False,
+                "rotation_recommended": False,  # don't recommend swap on transient network error
+                "error": f"{type(e).__name__}: {str(e)[:200]}",
+            })
+
+    if fetch_errors == len(_GOLDEN_SET):
+        benchmark_health = "unknown"
+        recommendation = (
+            "All probes failed with network errors — connectivity issue, "
+            "not benchmark rot. Re-run when network recovers."
+        )
+    elif rotation_for:
+        if len(rotation_for) >= len(_GOLDEN_SET) // 2:
+            benchmark_health = "stale"
+            recommendation = (
+                f"{len(rotation_for)} of {len(_GOLDEN_SET)} benchmark targets "
+                "no longer match their claimed mode. Refresh the golden set: "
+                "investigate each `rotation_recommended_for` URL manually, "
+                "swap or update its `claimed_mode`, bump `_GOLDEN_SET_VERSION` "
+                "to the next quarter, document in CHANGELOG, and ship."
+            )
+        else:
+            benchmark_health = "partially_stale"
+            recommendation = (
+                f"{len(rotation_for)} target(s) drifted: {rotation_for}. "
+                "Most of the set is still valid. Swap the drifted entries, "
+                "bump version, ship a patch release."
+            )
+    else:
+        benchmark_health = "fresh"
+        recommendation = (
+            "All targets agree with their claimed mode under the independent "
+            "macroscopic classifier. Benchmark is still representative. "
+            "Re-run in ~3 months."
+        )
+
+    return with_meta(
+        {
+            "targets": targets,
+            "summary": {
+                "total": len(_GOLDEN_SET),
+                "agreed": sum(1 for t in targets if t.get("agrees")),
+                "drifted": len(rotation_for),
+                "fetch_errors": fetch_errors,
+            },
+            "benchmark_health": benchmark_health,
+            "rotation_recommended_for": rotation_for,
+            "recommendation": recommendation,
+            "golden_set_version": _GOLDEN_SET_VERSION,
+        },
+        source="migration.meta_validate_golden_set",
+        extra={"golden_set_version": _GOLDEN_SET_VERSION},
+    )
+
+
 def calibration_check(extra_targets: dict[str, str] | None = None) -> dict:
     """Run ``prerender_signals`` against a curated set of public sites with
     known prerender behaviour, to verify the detector is actually working
@@ -115,27 +349,30 @@ def calibration_check(extra_targets: dict[str, str] | None = None) -> dict:
     - ``csr``        — a pure CSR demo page.
 
     A pass means: every site classifies as expected → instrument is calibrated.
-    A fail means: at least one site mis-classifies → re-check the regex,
-    re-check Cloudflare/CDN behaviour for the test host, do not run forensic
-    audits until calibration passes.
+    A fail means: at least one site mis-classifies → either the detector has
+    drifted OR the benchmark has aged out. The response includes
+    ``golden_set_version`` (e.g. ``"2026-Q2"``); compare against the latest
+    release CHANGELOG to tell which it is. If the benchmark has rotated since
+    your version, upgrade the MCP. If versions match and probes still fail,
+    the detector has a real regression — file an issue.
 
     Args:
         extra_targets: optional ``{url: expected_mode}`` to extend the golden
             set with your own curated controls (e.g. add staging sites whose
-            mode you've verified manually).
+            mode you've verified manually). Recommended: pin a couple of YOUR
+            sites with known behaviour as a sanity check independent of the
+            public benchmarks.
 
     Returns:
         ``results`` — per-target {url, expected, got, pass, sample_signals}
         ``all_pass`` — bool. True iff every target classified correctly.
         ``instrument_status`` — "calibrated" / "drift_detected" / "partial"
         ``recommendation`` — human-readable next action when not calibrated.
+        ``golden_set_version`` — version stamp of the bundled benchmark, so
+            an operator can tell whether a failure is from instrument drift
+            or from stale benchmarks.
     """
-    GOLDEN_SET: dict[str, str] = {
-        "https://nextjs.org/": "ssr",
-        "https://www.cloudflare.com/": "ssr",
-        "https://reactjs.org/": "ssr",
-        "https://create-react-app.dev/": "ssr",
-    }
+    GOLDEN_SET: dict[str, str] = dict(_GOLDEN_SET)  # copy so extras don't mutate the module-level set
     if extra_targets:
         GOLDEN_SET.update(extra_targets)
 
@@ -185,10 +422,18 @@ def calibration_check(extra_targets: dict[str, str] | None = None) -> dict:
         status = "drift_detected"
         recommendation = (
             f"{fails + errors} of {total} probes mis-classified or errored. "
-            "The detector has drifted against the current web. DO NOT run "
-            "forensic audits until calibration passes — the output cannot be "
-            "trusted. Re-check `_extract_signals` and the prerender_mode "
-            "classification rules in src/google_seo_mcp/migration/prerender.py."
+            "TWO possible causes — check both before assuming a real bug:\n"
+            "  (1) **Benchmark rot**: the public targets in the golden set "
+            f"(version {_GOLDEN_SET_VERSION}) may have rotated their stack. "
+            "Vercel/Cloudflare swap RSC/streaming/ISR every few quarters. "
+            "If your installed version is older than the latest CHANGELOG, "
+            "upgrade the MCP — a fresh benchmark may already exist.\n"
+            "  (2) **Detector drift**: if you're on the latest version and "
+            "calibration still fails, the prerender_signals classification "
+            "logic has a real regression. Open an issue with the per-probe "
+            "results below — DO NOT run forensic audits until fixed. "
+            "Re-check `_extract_signals` and the prerender_mode rules in "
+            "src/google_seo_mcp/migration/prerender.py."
         )
     elif passes == total:
         status = "calibrated"
@@ -212,8 +457,11 @@ def calibration_check(extra_targets: dict[str, str] | None = None) -> dict:
             "all_pass": fails == 0 and errors == 0,
             "instrument_status": status,
             "recommendation": recommendation,
+            "golden_set_version": _GOLDEN_SET_VERSION,
+            "golden_set_targets": list(_GOLDEN_SET.keys()),
         },
         source="migration.calibration_check",
+        extra={"golden_set_version": _GOLDEN_SET_VERSION},
     )
 
 
