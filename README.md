@@ -131,7 +131,7 @@ Claude can now *explain* the health: GA4 sees 61% of GSC clicks, which is normal
 
 ## All 100 tools
 
-11 categories. Bold counts — verified against `mcp._tool_manager.list_tools()` on the v0.7.1 release.
+14 categories. Counts verified against `mcp._tool_manager.list_tools()` on the v0.8.3 release. The list below shows the original 11 categories that existed up to v0.7.1; v0.8.0 added `aeo`, `history`, `serp`, `logs` modules — call `get_capabilities` for the live grouping (it derives categories dynamically and never drifts from reality).
 
 <details open>
 <summary><b>🔄 Cross-platform (6 — the unique selling proposition)</b></summary>
