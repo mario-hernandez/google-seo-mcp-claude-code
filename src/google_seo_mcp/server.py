@@ -225,6 +225,7 @@ _register(migration_tools.wp_extract_redirects, name="migration_wp_extract_redir
 _register(migration_tools.wp_internal_links_graph, name="migration_wp_internal_links_graph")
 _register(migration_tools.prerender_check, name="migration_prerender_check")
 _register(migration_tools.prerender_check_batch, name="migration_prerender_check_batch")
+_register(migration_tools.calibration_check, name="migration_calibration_check")
 _register(migration_tools.prerender_vs_hydrated, name="migration_prerender_vs_hydrated")
 _register(migration_tools.googlebot_diff, name="migration_googlebot_diff")
 _register(migration_tools.multi_bot_diff, name="migration_multi_bot_diff")
@@ -449,6 +450,26 @@ def get_capabilities() -> dict:
     # source of truth for tool discovery. Lesson learned.
     categories = _categorize_registered_tools()
 
+    # Optional-dependency probe — surfaces tools that are registered but
+    # would fail at invocation time because their dep is missing (typically
+    # Playwright for `migration_prerender_vs_hydrated`). The agent can read
+    # `tools_unavailable[*].affected_tools` BEFORE invoking, plan around it,
+    # and ask the human to install if needed — instead of discovering the
+    # gap mid-audit.
+    from . import _dep_check
+    deps = _dep_check.probe_optional_deps()
+    tools_unavailable = []
+    for missing in deps["unavailable"]:
+        if missing["degraded_not_broken"]:
+            continue  # tool still works, just on a fallback path — don't list as unavailable
+        for tool_name in missing["affected_tools"]:
+            tools_unavailable.append({
+                "name": tool_name,
+                "reason": missing["reason"],
+                "install_cmd": missing["install_cmd"],
+                "extra_cmd": missing.get("extra_cmd"),
+            })
+
     return {
         "mcp_version": _resolve_mcp_version(),
         "auth": {
@@ -459,6 +480,8 @@ def get_capabilities() -> dict:
         },
         "tools_total": sum(len(v) for v in categories.values() if isinstance(v, list)),
         "categories": categories,
+        "tools_unavailable": tools_unavailable,
+        "deps": deps,
         "resources": ["google-seo://algorithm-updates"],
         "tip": (
             "Swiss-knife workflow: (1) `gsc_list_sites` + `ga4_list_properties` to "

@@ -4,6 +4,87 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] — 2026-05-04
+
+### 4 fixes from a third real-world feedback pass (forensic audit consultant)
+
+A migration consultant ran v0.8.3 through a forensic audit of a live SSR
+site and returned a precise feedback list. Each addresses an
+operational gap that bites the agent at the *worst* possible moment —
+mid-audit. All four fixed.
+
+### Added
+
+**`get_capabilities` now exposes `tools_unavailable` and `deps`**. The
+forensic auditor was launching `migration_prerender_vs_hydrated` in
+parallel with three other audits and discovered Playwright wasn't
+installed mid-execution. Now the agent can plan around missing deps
+**before** invoking. Probe runs at module import time (~5ms total),
+covers Playwright, statsmodels+scipy, advertools, extruct, rapidfuzz,
+pytrends, waybackpy, defusedxml. Each unavailable dep documents
+`install_cmd` + `extra_cmd` + `affected_tools` + whether the absence
+is fatal or just degraded. New module: `_dep_check.py`.
+
+**Per-facet `health_breakdown` in `prerender_signals`**. The auditor
+flagged a real conceptual confusion: nextjs.org returns
+`prerender_mode=ssr, viability=6/6` but `health=amber`. The agent
+reading just `health` couldn't tell whether rendering was broken
+(cutover blocker) or merely canonical/schema were missing (post-launch
+fix). Now the response includes:
+```json
+"health_breakdown": {
+  "rendering": "green",       ← derived from prerender_mode only
+  "title": "green",
+  "meta_description": "green",
+  "canonical": "amber",       ← THIS is why overall health is amber
+  "schema": "amber",          ← AND this
+  "open_graph": "green",
+  "h1": "green",
+  "visible_text": "green"
+}
+```
+The aggregate `health` semaphore is preserved; the breakdown makes the
+*why* explicit so an agent can branch on rendering specifically.
+
+**Contextual `notes` + `cf`/`server`/`http_status` in `prerender_signals`**.
+The auditor specifically called out `migration_googlebot_diff` as
+"bordada" (impeccable) for emitting heuristic annotations like
+*"\`Vary\` header is 'accept-encoding' (no User-Agent). The CDN cannot
+legitimately differentiate by UA"* — exactly what an agent needs to
+interpret a result without inferring. Now `prerender_signals` emits
+the same caliber:
+- Framework detection (`#__next`, `#__nuxt`, react-helmet-async, Vite)
+- Cloudflare cache awareness (`cf-cache-status: DYNAMIC` vs `HIT`)
+- Vary header sanity check (mirrors googlebot_diff pattern)
+- Schema absence escalation
+- Soft-404 callout
+- Forensic surface: `cf.cache_status`, `cf.ray`, `cf.vary`, `server`,
+  `http_status` — same shape as googlebot_diff so the two tools cross-reference cleanly.
+
+**New tool: `migration_calibration_check`**. The auditor today had to
+manually probe nextjs.org as a control sample to verify the SSR
+detector wasn't drifting. Now the MCP can do that itself: runs
+`prerender_signals` against a curated set of public sites with known
+prerender behaviour (nextjs.org, cloudflare.com, reactjs.org,
+create-react-app.dev — all SSR/SSG). Returns
+`instrument_status: calibrated | drift_detected | partial` plus a
+human-readable `recommendation`. Use this BEFORE high-stakes forensic
+audits to confirm the detector is working. Optional `extra_targets`
+parameter to extend the golden set with your own controls.
+
+### Tool count: 100 → 101.
+
+### Tests
+103/103 pass. `test_tool_count` updated 100 → 101.
+
+### Backward compatibility
+All v0.8.3 fields and tools preserved. New fields added alongside.
+`prerender_signals` now also emits `cf`/`server`/`http_status` because
+it switched from `fetch_as` to `fetch_as_with_meta` internally — same
+HTTP fetch, additional headers preserved.
+
+---
+
 ## [0.8.3] — 2026-05-04
 
 ### 4 refinements after deeper real-world use of v0.8.2

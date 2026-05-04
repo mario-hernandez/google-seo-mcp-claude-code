@@ -246,8 +246,16 @@ def prerender_signals(url: str) -> dict[str, Any]:
     """
     from ..security import wrap_untrusted
 
-    html = fetch_as(url, USER_UA)
+    # Use fetch_as_with_meta to preserve response headers + CF/server fingerprint
+    # — same forensic surface as `migration_googlebot_diff`. The agent gets
+    # cf.cache_status / cf.ray / server / vary alongside the SEO signals so
+    # follow-up CF log queries can correlate.
+    fetched = fetch_as_with_meta(url, USER_UA, raise_on_error=True)
+    html = fetched["text"]
     sig = _extract_signals(html, url)
+    sig["http_status"] = fetched.get("status")
+    sig["cf"] = fetched.get("cf", {})
+    sig["server"] = (fetched.get("headers") or {}).get("server")
 
     # Shell-only soft-404 detection: when the body is essentially just a
     # JS root and the page reports rich meta, a naive parser could call
@@ -378,6 +386,112 @@ def prerender_signals(url: str) -> dict[str, Any]:
         sig["health"] = "red"
     else:
         sig["health"] = "amber"
+
+    # Per-dimension health breakdown so an agent can see EXACTLY which
+    # facet pulled the overall verdict down. Real-world papercut: nextjs.org
+    # comes back as `prerender_mode=ssr, viability=6/6, health=amber` and
+    # an agent reading just `health` cannot tell whether the rendering is
+    # broken (cutover blocker) or merely the canonical/schema is missing
+    # (post-launch fix). Now both signals are explicit:
+    #
+    #   - prerender_mode + prerender_mode_viability  → rendering dimension
+    #   - health_breakdown                            → per-facet rollup
+    #   - health                                      → aggregate verdict
+    #
+    # An agent that wants "is rendering ready to ship?" reads
+    # health_breakdown.rendering. An agent that wants "are all SEO basics
+    # in place?" reads the full breakdown.
+    sig["health_breakdown"] = {
+        "rendering": "green" if sig["prerender_mode"] in ("ssr",) else (
+            "amber" if sig["prerender_mode"] == "head_only"
+            else ("red" if sig["prerender_mode"] == "csr" else "unknown")
+        ),
+        "title": "green" if sig["title"] else "red",
+        "meta_description": "green" if sig["meta_description"] else "amber",
+        "canonical": "green" if sig["canonical"] else "amber",
+        "schema": "green" if sig["jsonld_blocks"] > 0 else "amber",
+        "open_graph": "green" if sig["og_count"] >= 3 else "amber",
+        "h1": "green" if sig["h1"] else "amber",
+        "visible_text": (
+            "green" if sig["visible_text_chars"] >= 500
+            else ("red" if sig["visible_text_chars"] < 200 else "amber")
+        ),
+    }
+
+    # Contextual notes — heuristic observations the agent can quote without
+    # having to derive them from raw fields. Same pattern as googlebot_diff:
+    # turn implicit knowledge into explicit annotations.
+    notes: list[str] = []
+    cf = sig.get("cf") or {}
+
+    # Framework / SSR pipeline detection
+    if 'id="__next"' in html or "id='__next'" in html:
+        notes.append("Next.js root mount (`#__next`) detected.")
+    elif 'id="__nuxt"' in html or "id='__nuxt'" in html:
+        notes.append("Nuxt root mount (`#__nuxt`) detected.")
+    elif 'id="root"' in html and "data-react-helmet" in html:
+        notes.append(
+            "React + react-helmet-async detected. Meta tags injected by Helmet "
+            "are visible in pre-render only if SSR is configured server-side; "
+            "client-only Helmet does not work for non-JS crawlers."
+        )
+    elif 'id="root"' in html or "id='root'" in html:
+        notes.append("Generic React root mount (`#root`) detected.")
+    elif "data-svelte" in html or 'id="svelte"' in html:
+        notes.append("Svelte/SvelteKit root mount detected.")
+
+    # Vite / SPA shell with custom meta-injection middleware
+    if (
+        sig["prerender_mode"] == "head_only"
+        and ("vite" in html.lower() or "type=\"module\"" in html)
+    ):
+        notes.append(
+            "Vite + meta-injection middleware pattern detected. Head meta is "
+            "server-rendered but body relies on client hydration. Works for "
+            "Googlebot's JS-rendering pipeline but NOT for AEO bots / social "
+            "scrapers / Bingbot — they will see empty body."
+        )
+
+    # Cloudflare cache awareness
+    if cf.get("cache_status") == "DYNAMIC":
+        notes.append(
+            "Cloudflare `cf-cache-status: DYNAMIC` — origin is generating fresh "
+            "HTML on every request (no edge cache). Useful for forensic audits: "
+            "the response you see came from origin, not a stale edge copy."
+        )
+    elif cf.get("cache_status") in ("HIT", "REVALIDATED"):
+        notes.append(
+            f"Cloudflare cache `{cf['cache_status']}` — response served from edge, "
+            "not origin. Re-fetch with cache-bust query string if you need to "
+            "audit live origin behaviour."
+        )
+
+    # Vary header sanity (mirrors the googlebot_diff pattern)
+    vary = (cf.get("vary") or "").lower()
+    if vary and "user-agent" not in vary and "user-agent" not in vary.replace("_", "-"):
+        notes.append(
+            f"`Vary` header is {cf.get('vary')!r} (no User-Agent). The CDN cannot "
+            "legitimately differentiate response by UA — any UA-conditional "
+            "divergence would be misconfigured cloaking."
+        )
+
+    # Schema absence pattern
+    if sig["jsonld_blocks"] == 0 and sig["prerender_mode"] in ("ssr", "head_only"):
+        notes.append(
+            "No JSON-LD schema in pre-rendered HTML. Either schema is "
+            "client-injected (invisible to AEO bots) or absent entirely. "
+            "Run `schema_extract_url` on the same URL to confirm."
+        )
+
+    # Soft 404 escalation
+    if "shell_only_soft_404" in issues:
+        notes.append(
+            "**Shell-only soft 404 detected**: 200 response with body that's "
+            "essentially a JS root mount. Googlebot will eventually classify "
+            "this as soft 404. Fix SSR before launch."
+        )
+
+    sig["notes"] = notes
 
     return sig
 

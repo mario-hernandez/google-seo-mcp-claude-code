@@ -11,7 +11,7 @@ def test_tool_count():
     # reauthenticate alias) + v0.8.0: 3 history + 4 serp + 7 logs +
     # 4 migration crawl_advanced + 2 singular wrappers (migration_redirect_chain,
     # migration_image_alts) + v0.8.3: 1 migration_prerender_check_batch = 100
-    assert len(tools) == 100, f"Expected 100 tools, got {len(tools)}"
+    assert len(tools) == 101, f"Expected 101 tools, got {len(tools)}"
 
 
 def test_tool_names_have_expected_prefixes():

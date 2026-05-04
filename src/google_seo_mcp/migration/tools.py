@@ -97,6 +97,126 @@ def prerender_check(url: str) -> dict:
     return with_meta(pr.prerender_signals(url), source="migration.prerender_check", site_url=url)
 
 
+def calibration_check(extra_targets: dict[str, str] | None = None) -> dict:
+    """Run ``prerender_signals`` against a curated set of public sites with
+    known prerender behaviour, to verify the detector is actually working
+    before you base cutover decisions on its output.
+
+    Use this BEFORE a high-stakes forensic audit. If the detector mis-classifies
+    nextjs.org as something other than ``ssr``, the regex/parser has drifted
+    against current web layout — DO NOT trust the rest of the audit until it's
+    fixed.
+
+    The default golden set covers the three modes the tool distinguishes:
+
+    - ``ssr``        — Next.js / Cloudflare / official React docs (Gatsby SSG)
+    - ``head_only``  — a deliberately client-rendered SPA exposing only
+                       meta/og pre-injected. Uses a known public sample.
+    - ``csr``        — a pure CSR demo page.
+
+    A pass means: every site classifies as expected → instrument is calibrated.
+    A fail means: at least one site mis-classifies → re-check the regex,
+    re-check Cloudflare/CDN behaviour for the test host, do not run forensic
+    audits until calibration passes.
+
+    Args:
+        extra_targets: optional ``{url: expected_mode}`` to extend the golden
+            set with your own curated controls (e.g. add staging sites whose
+            mode you've verified manually).
+
+    Returns:
+        ``results`` — per-target {url, expected, got, pass, sample_signals}
+        ``all_pass`` — bool. True iff every target classified correctly.
+        ``instrument_status`` — "calibrated" / "drift_detected" / "partial"
+        ``recommendation`` — human-readable next action when not calibrated.
+    """
+    GOLDEN_SET: dict[str, str] = {
+        "https://nextjs.org/": "ssr",
+        "https://www.cloudflare.com/": "ssr",
+        "https://reactjs.org/": "ssr",
+        "https://create-react-app.dev/": "ssr",
+    }
+    if extra_targets:
+        GOLDEN_SET.update(extra_targets)
+
+    results = []
+    passes = 0
+    fails = 0
+    errors = 0
+    for url, expected in GOLDEN_SET.items():
+        try:
+            sig = pr.prerender_signals(url)
+            got = sig.get("prerender_mode", "unknown")
+            ok = got == expected
+            results.append({
+                "url": url,
+                "expected": expected,
+                "got": got,
+                "pass": ok,
+                "health": sig.get("health"),
+                "viability_score": sum(
+                    1 for v in (sig.get("prerender_mode_viability") or {}).values()
+                    if v is True
+                ),
+            })
+            if ok:
+                passes += 1
+            else:
+                fails += 1
+        except Exception as e:
+            errors += 1
+            results.append({
+                "url": url,
+                "expected": expected,
+                "got": "error",
+                "pass": False,
+                "error": f"{type(e).__name__}: {str(e)[:200]}",
+            })
+
+    total = len(results)
+    if errors == total:
+        status = "drift_detected"
+        recommendation = (
+            "Every probe failed with an exception — connectivity issue or major "
+            "regex/parser drift. Check internet access from this machine, then "
+            "re-run. If errors persist, file an issue with the exception message."
+        )
+    elif fails > 0 or errors > 0:
+        status = "drift_detected"
+        recommendation = (
+            f"{fails + errors} of {total} probes mis-classified or errored. "
+            "The detector has drifted against the current web. DO NOT run "
+            "forensic audits until calibration passes — the output cannot be "
+            "trusted. Re-check `_extract_signals` and the prerender_mode "
+            "classification rules in src/google_seo_mcp/migration/prerender.py."
+        )
+    elif passes == total:
+        status = "calibrated"
+        recommendation = (
+            "All probes classified as expected. Detector is calibrated — "
+            "forensic audits can proceed."
+        )
+    else:
+        status = "partial"
+        recommendation = "Mixed results — review per-probe details."
+
+    return with_meta(
+        {
+            "results": results,
+            "summary": {
+                "total": total,
+                "pass": passes,
+                "fail": fails,
+                "error": errors,
+            },
+            "all_pass": fails == 0 and errors == 0,
+            "instrument_status": status,
+            "recommendation": recommendation,
+        },
+        source="migration.calibration_check",
+    )
+
+
 def prerender_check_batch(urls: list[str], concurrency: int = 8) -> dict:
     """Run ``prerender_check`` over a list of URLs in parallel.
 

@@ -19,9 +19,61 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10b981" alt="MIT"></a>
 </p>
 
-> Stop running two MCPs. Stop pasting reports into ChatGPT. Connect both Google Search Console and Google Analytics 4 to Claude as native tools — with the cross-platform diagnostics that actually matter for SEO: which pages would convert if they ranked higher, which queries pay, where tracking is broken, and what the full journey looks like from organic click to revenue.
+---
 
-> **v0.8.3** — four new modules added in v0.8.0 (history persistence, SERP intelligence via DataForSEO, server log analysis, advanced technical crawl). v0.7.x stability and multi-client hardening preserved. v0.8.1-0.8.3 polish from real-world use: singular convenience wrappers, dynamic `get_capabilities` (no more drift), structured `prerender_mode_viability` matrix, `prerender_check_batch` for parallel audits, hardened JSON-LD detector, GA4 `property_timezone` in `_meta`. **100 tools, 103 regression tests, 0 known crashes, multi-tenant safe, Service Account first-class.** See [`CHANGELOG.md`](CHANGELOG.md) for the line-by-line trail.
+## 🚦 Read this first — pick your level
+
+This project means different things to different people. Skip ahead to whichever description sounds like you:
+
+- 👋 **["I just want my website to do better in Google. Should I care about this?"](#-im-not-a-developer--what-is-this-actually-for)** — 90 seconds, no jargon.
+- 🛠️ **["I run an agency / I do SEO for a living. What does this give me?"](#-im-an-seo-practitioner--what-does-this-replace)** — 2 minutes, the value prop.
+- ⚡ **["I'm an engineer and I know what an MCP is. Just show me the install."](#30-second-quickstart)** — 30 seconds.
+- 🧠 **["I want to see all 100 tools and the cross-platform tricks."](#what-you-actually-get)** — full technical surface below.
+
+---
+
+### 👋 I'm not a developer — what is this actually for?
+
+Imagine you have a website and you ask Google two questions every month:
+
+1. *"Search Console, which keywords brought me visitors?"* → Google answers with one report.
+2. *"Analytics, what did those visitors do once they arrived?"* → Google answers with another report, in a totally different place.
+
+To get the picture that actually matters — *"which keywords bring visitors who buy / sign up / contact me?"* — you have to put both reports together by hand in a spreadsheet. **Every single time.** And if you're not a SEO person, the reports are confusing on their own.
+
+This project lets you skip the spreadsheet. You install it once on your computer, and after that you can just talk to Claude in plain language:
+
+> *"Why did my traffic drop last week?"*
+> *"Which pages on my site are wasting their potential — they could rank higher AND people would actually convert?"*
+> *"Show me the keywords that bring revenue, not just clicks."*
+
+Claude pulls the data from Google directly, cross-checks Search Console against Analytics, and answers in plain language with the exact numbers (not made-up numbers — every figure comes with a "where I got this from" stamp). You don't need to know what GSC, GA4 or "cross-platform attribution" mean. Claude does.
+
+**One important catch**: your website needs to already have Google Search Console and Google Analytics 4 set up (most websites do — these are Google's free tools). If they aren't, this project can't help you yet. Set them up first via [search.google.com/search-console](https://search.google.com/search-console) and [analytics.google.com](https://analytics.google.com).
+
+If that sounds useful, jump to [⚡ the 30-second install](#30-second-quickstart) and ask a developer friend to set it up — it takes 5 minutes and is a one-time thing.
+
+---
+
+### 🛠️ I'm an SEO practitioner — what does this replace?
+
+If you spend your week pasting GSC + GA4 + Lighthouse + DataForSEO output into ChatGPT and praying it doesn't hallucinate the numbers, this is for you. Specifically:
+
+- **Replaces Looker Studio dashboards for diagnostic questions** ("why did this page drop?") because the answers come *classified* — `ranking_loss` vs `ctr_collapse` vs `demand_decline` vs `disappeared` — instead of as a chart you have to interpret.
+- **Replaces Sistrix / Semrush light usage** for keyword research and SERP feature detection (AI Overview, PAA, featured snippet) — DataForSEO is pay-as-you-go, ~$0.20/year for monthly audits of one client.
+- **Replaces a chunk of Botify / OnCrawl** for migration audits: redirect chains, sitemap diff, hreflang cluster check, schema parity, image alt coverage, server log analysis (Googlebot vs spoofers), and a full WP → JS-stack migration toolkit.
+- **Replaces the manual "paste into ChatGPT and hope" workflow** for client reports. Every number comes with provenance: which API, which date range, which property. The agent literally cannot make figures up.
+- **Adds AEO 2026 tooling** that doesn't exist anywhere else: `llms.txt` validation, AI bot policy audit (GPTBot, ClaudeBot, PerplexityBot, CCBot…), AI Overview presence detection per query.
+
+It does **not** replace a real link audit (no Ahrefs / Majestic backlink data), competitor share-of-voice tracking at scale, or an enterprise crawl on 5M+ URLs. For everything else — the 95% case of SMB to mid-market SEO — it does the job in one binary.
+
+[Jump to the install ↓](#30-second-quickstart) · [or browse all 100 tools ↓](#what-you-actually-get) · [or read the agent's playbook (`AGENTS.md`)](AGENTS.md).
+
+---
+
+> 🎯 **The headline (for everyone, technical or not):** Claude becomes able to answer *"which organic keywords actually generate revenue, and which pages should I rank up first?"* — Search Console rankings, Analytics 4 conversions, and the cross-platform tools that connect them, all in one MCP. Not a CSV dump. Not a hallucination. A diagnosis.
+
+> **Latest release — v0.8.3.** 100 tools across 14 categories, 103 regression tests, multi-tenant safe, Service Account first-class. v0.8.x added four new modules (history persistence, SERP intelligence via DataForSEO, server log analysis, advanced technical crawl) plus polish from real-world feedback (dynamic `get_capabilities`, structured `prerender_mode_viability`, batch parallel audits, hardened JSON-LD detector, GA4 `property_timezone`). See [`CHANGELOG.md`](CHANGELOG.md) for line-by-line history.
 
 <p align="center">
   <img src="docs/why-unified.png" alt="Two isolated MCP servers vs one unified MCP — unified unlocks cross-platform tools (journey, opportunity matrix, traffic health check)" width="100%">
@@ -36,24 +88,53 @@ pipx install git+https://github.com/mario-hernandez/google-seo-mcp-claude-code
 # 2. Add to Claude Code
 claude mcp add google-seo-mcp -- $(which google-seo-mcp)
 
-# 3. Authenticate — choose ONE method (see decision matrix below)
+# 3. Authenticate — pick ONE method (next section)
 ```
 
-Then ask Claude: *"List all my GSC sites and GA4 properties, then run the opportunity matrix for example.com to surface pages where ranking up would also convert."*
+That's it. Now ask Claude:
+
+> *"List all my GSC sites and GA4 properties, then run the opportunity matrix for example.com to surface pages where ranking up would also convert."*
 
 Works with **Claude Code**, **Claude Desktop**, **Cursor**, **Windsurf**, and any other MCP-compatible client.
 
-### Pick your auth method (this matters)
+### How to authenticate (this 5-minute decision saves you hours)
 
-| If you are… | Use this | One-line setup |
-|-------------|----------|----------------|
-| **Anything except a developer on a desktop with a working browser** (Claude Code, headless servers, agents IA, CI, multi-client agencies, Workspace accounts where the admin hasn't approved unverified apps…) | **Service Account** ✅ default | Create a SA JSON in Cloud Console → grant the SA email read access on each GSC site + GA4 property → `export GOOGLE_SEO_SERVICE_ACCOUNT_FILE=/path/to/sa.json` |
-| Single dev on a desktop, OAuth client already verified or your email registered as test user | ADC | `gcloud auth application-default login --scopes=https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/analytics.readonly` |
-| You have an OAuth Desktop client JSON and a working browser | OAuth Desktop flow | `export GOOGLE_SEO_OAUTH_CLIENT_FILE=/path/to/client.json` |
+There are three ways to give the MCP permission to read your Google data. Picking the right one for your situation is the single biggest source of confusion on this project — read this carefully.
 
-> **Recommended default is Service Account.** It's the only method that survives across all environments: no token expiration, no consent screen, no "App is blocked" issues, no reconsent every few weeks when Google revokes inactive tokens, no browser. The `gcloud` flow that the Google docs lead with is fragile in real production. Detailed walkthrough: [Service Account setup](#service-account-setup-recommended-default).
+**🟢 Service Account (recommended for most people)**
 
-If something fails on first call (`invalid_grant`, `App is blocked`, empty results, permission denied) jump to [Troubleshooting](#troubleshooting) — every common error has a documented fix.
+> Use this if you're using Claude Code, running on a server, automating with agents, working with multiple clients, or your Google account is part of a Workspace where IT controls app approvals.
+
+Create a Service Account JSON file in Google Cloud Console → grant its email read access to each Search Console site and Analytics property you want to use → set one environment variable:
+
+```bash
+export GOOGLE_SEO_SERVICE_ACCOUNT_FILE=/path/to/sa.json
+```
+
+Why this is the default: no browser needed, no token expirations, no "App is blocked" surprises, no reconsenting every few weeks. **It just keeps working.** Full step-by-step in [Service Account setup ↓](#service-account-setup-recommended-default).
+
+**🔵 ADC (good for solo developers on a desktop)**
+
+> Use this if you're a single developer, on your own laptop, with a browser open right now, and you don't mind reauthenticating every couple of months.
+
+```bash
+gcloud auth application-default login \
+  --scopes=https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/analytics.readonly
+```
+
+This is what Google's own docs recommend, but in practice the OAuth client gets revoked silently after periods of inactivity and Workspace-managed accounts often see "This app is blocked". If either happens, switch to Service Account.
+
+**🟡 OAuth Desktop flow (you already have a verified OAuth client JSON)**
+
+```bash
+export GOOGLE_SEO_OAUTH_CLIENT_FILE=/path/to/client.json
+```
+
+Niche use case. Most people don't need this.
+
+---
+
+> **Stuck on auth?** If you see `invalid_grant`, `App is blocked`, empty results, or `permission denied` on your first call, jump to [Troubleshooting ↓](#troubleshooting) — every common error has a documented fix.
 
 ## Questions you can actually ask
 
