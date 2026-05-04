@@ -9,8 +9,9 @@ def test_tool_count():
     # 12 GSC + 14 GA4 + 6 cross + 5 LH + 3 CrUX + 3 Schema + 5 Idx + 5 Trends +
     # 21 migration core + 2 AEO + 3 meta (get_capabilities, reload_credentials,
     # reauthenticate alias) + v0.8.0: 3 history + 4 serp + 7 logs +
-    # 4 migration crawl_advanced = 97
-    assert len(tools) == 97, f"Expected 97 tools, got {len(tools)}"
+    # 4 migration crawl_advanced + 2 singular wrappers (migration_redirect_chain,
+    # migration_image_alts) = 99
+    assert len(tools) == 99, f"Expected 99 tools, got {len(tools)}"
 
 
 def test_tool_names_have_expected_prefixes():

@@ -275,6 +275,46 @@ _register(migration_crawl_advanced.measure_response_times,       name="migration
 _register(migration_crawl_advanced.check_image_alt_coverage,     name="migration_image_alt_coverage")
 
 
+# Singular convenience wrappers — same logic, single-URL input, friendlier
+# return shape. Several internal docs and external prompts referenced these
+# names before the plural ones were finalized; keeping both avoids breaking
+# anyone's existing playbook.
+def _migration_redirect_chain(url: str, max_hops: int = 10, timeout: float = 15.0) -> dict:
+    """Trace the full 301/302 chain for a SINGLE URL.
+
+    Returns the chain (list of {url, status, location}), final URL, hop count,
+    and a flag if it exceeds Googlebot's drop threshold (5 hops).
+    Use ``migration_redirect_chains`` for batched lookups over a URL list.
+    """
+    result = migration_crawl_advanced.crawl_redirect_chains(
+        [url], max_hops=max_hops, timeout=timeout,
+    )
+    data = result.get("data") if isinstance(result, dict) and "data" in result else result
+    chains = (data or {}).get("results", []) if isinstance(data, dict) else []
+    single = chains[0] if chains else {"url": url, "error": "empty_result"}
+    return {**result, "data": single} if isinstance(result, dict) and "_meta" in result else single
+
+
+def _migration_image_alts(url: str, timeout: float = 15.0) -> dict:
+    """Check ``<img alt>`` coverage for a SINGLE URL.
+
+    Returns counts of images with/without alt, coverage_pct, and a sample of
+    the missing-alt URLs. Use ``migration_image_alt_coverage`` for a batch over
+    a list of pages.
+    """
+    result = migration_crawl_advanced.check_image_alt_coverage(
+        [url], timeout=timeout,
+    )
+    data = result.get("data") if isinstance(result, dict) and "data" in result else result
+    pages = (data or {}).get("page_results", []) if isinstance(data, dict) else []
+    single = pages[0] if pages else {"page": url, "error": "empty_result"}
+    return {**result, "data": single} if isinstance(result, dict) and "_meta" in result else single
+
+
+_register(_migration_redirect_chain, name="migration_redirect_chain")
+_register(_migration_image_alts,     name="migration_image_alts")
+
+
 # ─── MCP Resource: Google algorithm updates reference ────────
 @mcp.resource("google-seo://algorithm-updates")
 def google_algorithm_updates_resource() -> str:

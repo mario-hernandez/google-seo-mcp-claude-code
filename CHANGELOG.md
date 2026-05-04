@@ -4,6 +4,47 @@ All notable changes to this project are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2026-05-04
+
+### Singular convenience wrappers for two batch tools
+
+Triggered by a real user (technical migration consultant) who tried to
+call `migration_redirect_chain` (singular) — a name several internal
+playbooks had standardized on — and found that only the plural
+`migration_redirect_chains` (which takes a URL list) existed. The
+consultant fell back to `curl -ILs` manually rather than discover the
+real name. Same papercut existed with `migration_image_alts` (docs)
+vs `migration_image_alt_coverage` (code).
+
+### Added
+- `migration_redirect_chain` — singular convenience wrapper. Takes a
+  single URL string (not a list), returns the chain dict directly
+  (not nested inside `results[0]`). Internally calls the plural
+  batch version with a list of one.
+- `migration_image_alts` — singular convenience wrapper for
+  `migration_image_alt_coverage`. Same pattern.
+
+Both plural batch tools (`migration_redirect_chains`,
+`migration_image_alt_coverage`) remain unchanged and recommended for
+URL-list workflows. Tool count: 97 → 99.
+
+### Why both names exist
+The plural names are correct for the *underlying* operation (the
+implementation crawls a list and returns a list of results). But
+operators reaching for these tools usually have ONE URL in mind and
+expect a singular result. Forcing them to wrap in `[url]` and unwrap
+`results[0]` is friction. Keeping both names gives the agent a clean
+choice — singular for one, plural for many — without renaming and
+breaking existing playbooks.
+
+### Tests
+92/92 pass. `test_tool_count` updated 97 → 99.
+
+### Backward compatibility
+Strictly additive. No behavior change to existing tools.
+
+---
+
 ## [0.8.0] — 2026-05-04
 
 ### Four new modules: persistence, SERP intelligence, server log analysis, advanced technical crawl
